@@ -767,11 +767,11 @@ class RollingBall7(Scene):
 class RollingBall8(Scene):
     t_end = 7                   # the animation runs until t = t_end (x = e^7, about 1097)
     x_zoom = 11                 # once the red ball passes this graduation, the axes zoom out
-    zoom_top = True             # False: only the bottom (red) axis zooms out
+    zoom_top = False            # False: only the bottom (red) axis zooms out
 
     def construct(self):
         r = 0.4                     # ball radius
-        x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
+        x_stops = [3, 7.389, 10, 100, 500]   # pause when the bottom ball reaches these graduations
         pause = 3.5                 # seconds of each pause
         slow_motion = 2             # 1 = normal speed, 2 = twice as slow, 3 = three times as slow...
         top_color, bot_color = BLUE, RED
