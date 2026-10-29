@@ -318,9 +318,9 @@ class RollingBall4(Scene):
 class RollingBall5(Scene):
     def construct(self):
         r = 0.4                     # ball radius
-        x_stops = [3, 8]            # pause when the bottom ball reaches these graduations
+        x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
         x_end = 12                  # bottom ball stops at this graduation
-        pause = 2.5                 # seconds of each pause
+        pause = 3.5                 # seconds of each pause
         top_color, bot_color = BLUE, RED
 
         # Two graduated axes from 0 (1 graduation = 1 scene unit), each ending in a dotted line
@@ -376,7 +376,7 @@ class RollingBall5(Scene):
         # and the current velocity written under it. The arrow leans to the right
         # so it doesn't cover the axis number under the ball
         def position_marker(axis, position, velocity, name, color):
-            arrow = Arrow(RIGHT * 1.3 + DOWN * 0.87, ORIGIN, buff=0, color=color, stroke_width=4,
+            arrow = Arrow(RIGHT * 0.7 + DOWN * 0.84, ORIGIN, buff=0, color=color, stroke_width=4,
                           max_tip_length_to_length_ratio=0.1)
 
             def readout(symbol):
@@ -416,7 +416,7 @@ class RollingBall5(Scene):
 
         self.add(top_axis, top_dots, bot_axis, bot_dots, p_dot, p_label, stars,
                  top_ball, bot_ball, top_marker, bot_marker, t_box, t_display)
-        self.wait(0.5)
+        self.wait(1.5)
 
         # Roll, pausing at each x in x_stops to show that the velocity equals x
         for x_target in x_stops + [x_end]:
@@ -427,4 +427,4 @@ class RollingBall5(Scene):
                 self.play(Indicate(bot_readout, color=YELLOW), Indicate(bot_vel_readout, color=YELLOW))
                 self.wait(pause - 1)
 
-        self.wait(0.5)
+        self.wait(1.5)
