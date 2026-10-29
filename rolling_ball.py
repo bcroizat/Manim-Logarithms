@@ -319,12 +319,13 @@ class RollingBall5(Scene):
     # Which ball (with its axis and readouts) is shown; the subclasses below turn one off
     show_top = True
     show_bot = True
+    t_end = 3                   # the animation runs until t = t_end (the red ball rolls off screen)
 
     def construct(self):
         r = 0.4                     # ball radius
         x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
-        x_end = 12                  # bottom ball stops at this graduation
         pause = 3.5                 # seconds of each pause
+        slow_motion = 2             # 1 = normal speed, 2 = twice as slow, 3 = three times as slow...
         top_color, bot_color = BLUE, RED
 
         # Two graduated axes from 0 (1 graduation = 1 scene unit), each ending in a dotted line
@@ -396,8 +397,10 @@ class RollingBall5(Scene):
                 vel_readout[1].set_value(velocity(s))
                 pos_readout.arrange(RIGHT, buff=0.15).next_to(arrow, DOWN, buff=0.1)
                 vel_readout.arrange(RIGHT, buff=0.15).next_to(pos_readout, DOWN, buff=0.15)
-                # keep the readouts inside the frame near the right edge
+                # keep the readouts inside the frame near the right edge; past the end of the
+                # axis they follow the ball again, so they leave the screen together with it
                 overflow = VGroup(pos_readout, vel_readout).get_right()[0] - (config.frame_x_radius - 0.15)
+                overflow -= max(0, arrow.get_end()[0] - axis.n2p(12)[0])
                 if overflow > 0:
                     pos_readout.shift(LEFT * overflow)
                     vel_readout.shift(LEFT * overflow)
@@ -425,12 +428,13 @@ class RollingBall5(Scene):
         self.add(t_box, t_display)
         self.wait(1.5)
 
-        # Roll, pausing at each x in x_stops to show that the velocity equals x
-        for x_target in x_stops + [x_end]:
-            t_target = np.log(x_target)
+        # Roll, pausing when the bottom ball reaches each x in x_stops (at t = ln x)
+        # to show that its velocity equals x, then carry on until t = t_end
+        stops = [np.log(x) for x in x_stops]
+        for t_target in stops + [self.t_end]:
             self.play(t.animate.set_value(t_target),
-                      run_time=t_target - t.get_value(), rate_func=linear)
-            if x_target in x_stops:
+                      run_time=(t_target - t.get_value()) * slow_motion, rate_func=linear)
+            if t_target in stops:
                 # highlight the bottom (red) values first, then the top (blue) ones;
                 # a hidden ball's highlight becomes a wait so all versions keep the same timing
                 if self.show_bot:
@@ -454,3 +458,4 @@ class RollingBall5Bottom(RollingBall5):
 class RollingBall5Top(RollingBall5):
     # Only the top axis and the blue ball (v = 1)
     show_bot = False
+    t_end = np.log(12)          # stops when the (hidden) red ball would reach 12
