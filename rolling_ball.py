@@ -395,7 +395,7 @@ class RollingBall5(Scene):
                 arrow.shift(axis.n2p(position(s)) + DOWN * 0.08 - arrow.get_end())
                 pos_readout[1].set_value(position(s))
                 vel_readout[1].set_value(velocity(s))
-                pos_readout.arrange(RIGHT, buff=0.15).next_to(arrow, DOWN, buff=0.1)
+                pos_readout.arrange(RIGHT, buff=0.15).next_to(arrow.get_start(), DOWN, buff=0.1)
                 vel_readout.arrange(RIGHT, buff=0.15).next_to(pos_readout, DOWN, buff=0.15)
                 # keep the readouts inside the frame near the right edge; past the end of the
                 # axis they follow the ball again, so they leave the screen together with it
