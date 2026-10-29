@@ -403,7 +403,7 @@ class RollingBall5(Scene):
             marker.add_updater(follow)
             return marker, pos_readout, vel_readout
 
-        top_marker, _, _ = position_marker(top_axis, top_pos, lambda s: 1, "y", top_color)
+        top_marker, top_readout, top_vel_readout = position_marker(top_axis, top_pos, lambda s: 1, "y", top_color)
         bot_marker, bot_readout, bot_vel_readout = position_marker(bot_axis, bot_pos, np.exp, "x", bot_color)
 
         # 1) Time box in the upper left corner (t = y, the top ball's position)
@@ -424,7 +424,9 @@ class RollingBall5(Scene):
             self.play(t.animate.set_value(t_target),
                       run_time=t_target - t.get_value(), rate_func=linear)
             if x_target in x_stops:
+                # highlight the bottom (red) values first, then the top (blue) ones
                 self.play(Indicate(bot_readout, color=YELLOW), Indicate(bot_vel_readout, color=YELLOW))
-                self.wait(pause - 1)
+                self.play(Indicate(top_readout, color=YELLOW), Indicate(top_vel_readout, color=YELLOW))
+                self.wait(pause - 2)
 
         self.wait(1.5)
