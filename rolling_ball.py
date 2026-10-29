@@ -57,9 +57,12 @@ class RollingBall2(Scene):
 
         # Rotating part: beach-ball sectors
         spin = VGroup(*[
-            Sector(radius=r, start_angle=i * PI / 3, angle=PI / 3,
-                   fill_color=RED if i % 2 == 0 else WHITE,
-                   fill_opacity=1, stroke_width=0).move_arc_center_to(c)
+            # AnnularSector with inner_radius=0 is a pie slice; unlike Sector(radius=...),
+            # outer_radius is honoured by every manim version (older ones ignore radius=)
+            AnnularSector(inner_radius=0, outer_radius=r,
+                          start_angle=i * PI / 3, angle=PI / 3,
+                          fill_color=RED if i % 2 == 0 else WHITE,
+                          fill_opacity=1, stroke_width=0).move_arc_center_to(c)
             for i in range(6)
         ])
 
