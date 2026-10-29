@@ -595,3 +595,170 @@ class RollingBall6(Scene):
                 self.wait(pause - 2)
 
         self.wait(1.5)
+
+
+class RollingBall7(Scene):
+    t_end = 4                   # the animation runs until t = t_end
+    x_zoom = 11                 # once the red ball passes this graduation, the axes zoom out
+
+    def construct(self):
+        r = 0.4                     # ball radius
+        x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
+        pause = 3.5                 # seconds of each pause
+        slow_motion = 2             # 1 = normal speed, 2 = twice as slow, 3 = three times as slow...
+        top_color, bot_color = BLUE, RED
+        x0 = -6.5                   # screen position of graduation 0
+        axis_length = 12            # screen length of the solid part of each axis
+
+        t = ValueTracker(0)
+
+        # Top ball: starts at 0, constant velocity v = 1   ->  y(t) = t
+        # Bottom ball: starts at 1, velocity v = x         ->  x(t) = e^t
+        # so at every instant y = ln(x)
+        top_pos = lambda s: s
+        bot_pos = np.exp
+
+        # Zoom: screen units per graduation. It is 1 until the red ball reaches x_zoom,
+        # then shrinks so that the red ball stays at the screen position of x_zoom
+        def unit(s):
+            return min(1, self.x_zoom / bot_pos(s))
+
+        def to_screen(k, y, s):
+            return np.array([x0 + k * unit(s), y, 0])
+
+        # Graduated axis from 0 whose graduations squeeze together as we zoom out.
+        # The solid line and the dotted end stay put; ticks and numbers are moved each frame.
+        # (All ticks and numbers exist from the start and are only shown or hidden: manim
+        # does not draw objects added to the scene in the middle of an animation.)
+        k_max = int(axis_length / unit(self.t_end)) + 1     # highest graduation ever visible
+
+        def make_axis(y):
+            line = Line(np.array([x0, y, 0]), np.array([x0 + axis_length, y, 0]),
+                        color=GREY_B, stroke_width=2)
+            dots = DashedLine(line.get_end(), RIGHT * config.frame_x_radius + UP * y,
+                              dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+            ticks = VGroup(*[Line(DOWN * 0.1, UP * 0.1, color=GREY_B, stroke_width=2)
+                             for k in range(k_max + 1)])
+            numbers = VGroup(*[MathTex(str(k), font_size=26) for k in range(k_max + 1)])
+
+            def draw_ticks(m):
+                s = t.get_value()
+                u = unit(s)
+                # numbered step: 1, 2, 5, 10... whichever keeps the numbers apart
+                step = next(n for n in (1, 2, 5, 10, 20, 50, 100) if n * u >= 0.6)
+                k_last = int(axis_length / u + 1e-9)        # last graduation on the solid line
+                for k in range(k_max + 1):
+                    p = to_screen(k, y, s)
+                    numbered = k % step == 0
+                    h = 0.1 if numbered else 0.05           # small unlabelled ticks in between
+                    ticks[k].put_start_and_end_on(p + DOWN * h, p + UP * h)
+                    ticks[k].set_stroke(opacity=1 if k <= k_last else 0)
+                    numbers[k].next_to(p, DOWN, buff=0.25)
+                    numbers[k].set_opacity(1 if numbered and k <= k_last else 0)
+
+            graduations = VGroup(ticks, numbers)
+            draw_ticks(graduations)
+            graduations.add_updater(draw_ticks)
+            return VGroup(line, dots, graduations)
+
+        top_y, bot_y = 2.2, -1.75
+        top_axis, bot_axis = make_axis(top_y), make_axis(bot_y)
+
+        # Point P at graduation 0 of the bottom axis
+        p_dot = Dot(to_screen(0, bot_y, 0), color=YELLOW, radius=0.08)
+        p_label = MathTex("P", color=YELLOW).next_to(p_dot, UP, buff=0.2)
+
+        # Green stars marking the starting positions (they follow the zoom)
+        top_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(to_screen(0, top_y, 0))
+        bot_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1)
+        bot_star.add_updater(lambda m: m.move_to(to_screen(1, bot_y, t.get_value())))
+
+        top_ball, top_spin = beach_ball(to_screen(0, top_y, 0) + UP * r, r, (top_color, YELLOW))
+        bot_ball, bot_spin = beach_ball(to_screen(1, bot_y, 0) + UP * r, r, (bot_color, WHITE))
+
+        def rolling(y, spin, position):
+            # Positions come from the exact formula, so there is no accumulated drift
+            state = {"pos": position(0), "screen_x": to_screen(position(0), y, 0)[0]}
+
+            def roll(mob, dt):
+                s = t.get_value()
+                pos = position(s)
+                screen_x = to_screen(pos, y, s)[0]
+                mob.shift(RIGHT * (screen_x - state["screen_x"]))
+                # rolling without slipping on the axis at its current scale
+                spin.rotate(-(pos - state["pos"]) * unit(s) / r, about_point=np.array([screen_x, y + r, 0]))
+                state["pos"], state["screen_x"] = pos, screen_x
+            return roll
+
+        top_ball.add_updater(rolling(top_y, top_spin, top_pos))
+        bot_ball.add_updater(rolling(bot_y, bot_spin, bot_pos))
+
+        # Arrow under each ball, its tip just below the axis, with the current position
+        # written under its tail. The arrow leans to the right so it doesn't cover the
+        # axis number under the ball
+        def position_marker(y, position, name, color):
+            arrow = Arrow(RIGHT * 0.7 + DOWN * 0.84, ORIGIN, buff=0, color=color, stroke_width=4,
+                          max_tip_length_to_length_ratio=0.1)
+            readout = VGroup(MathTex(name + " =", color=color, font_size=34),
+                             DecimalNumber(0, num_decimal_places=2, color=color, font_size=34))
+
+            def follow(mob):
+                s = t.get_value()
+                arrow.shift(to_screen(position(s), y, s) + DOWN * 0.08 - arrow.get_end())
+                readout[1].set_value(position(s))
+                readout.arrange(RIGHT, buff=0.15).next_to(arrow.get_start(), DOWN, buff=0.1)
+
+            marker = VGroup(arrow, readout)
+            follow(marker)
+            marker.add_updater(follow)
+            return marker, readout
+
+        top_marker, top_readout = position_marker(top_y, top_pos, "y", top_color)
+        bot_marker, bot_readout = position_marker(bot_y, bot_pos, "x", bot_color)
+
+        # Box between the axes: ln(x) = y, with x in red and y in blue
+        def equation(x_value, y_value):
+            return VGroup(
+                MathTex(r"\ln("),
+                DecimalNumber(x_value, num_decimal_places=2, color=bot_color),
+                MathTex(")"),
+                MathTex("="),
+                DecimalNumber(y_value, num_decimal_places=2, color=top_color),
+            )
+
+        eq_center = UP * 0.15
+        eq = equation(1, 0)
+
+        def update_eq(m):
+            s = t.get_value()
+            m[1].set_value(bot_pos(s))
+            m[4].set_value(top_pos(s))
+            m.arrange(RIGHT, buff=0.12).move_to(eq_center)
+            m[3].shift(RIGHT * 0.06)                # a little more room around "="
+            m[4].shift(RIGHT * 0.12)
+
+        update_eq(eq)
+        eq.add_updater(update_eq)
+        # Fixed-size box, sized for the widest equation shown ("ln(54.60) = 4.00")
+        widest = equation(54.6, 4).arrange(RIGHT, buff=0.12)
+        eq_box = SurroundingRectangle(widest, color=WHITE, buff=0.3, corner_radius=0.1)
+        eq_box.stretch_to_fit_width(eq_box.width + 0.2).move_to(eq_center)
+
+        self.add(top_axis, top_star, top_ball, top_marker,
+                 bot_axis, p_dot, p_label, bot_star, bot_ball, bot_marker,
+                 eq_box, eq)
+        self.wait(1.5)
+
+        # Roll, pausing when the bottom ball reaches each x in x_stops (at t = ln x),
+        # then carry on until t = t_end
+        stops = [np.log(x) for x in x_stops]
+        for t_target in stops + [self.t_end]:
+            self.play(t.animate.set_value(t_target),
+                      run_time=(t_target - t.get_value()) * slow_motion, rate_func=linear)
+            if t_target in stops:
+                # flash both red x values together, then both blue y values
+                self.play(Indicate(bot_readout, color=YELLOW), Indicate(eq[1], color=YELLOW))
+                self.play(Indicate(top_readout, color=YELLOW), Indicate(eq[4], color=YELLOW))
+                self.wait(pause - 2)
+
+        self.wait(1.5)
