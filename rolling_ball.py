@@ -319,7 +319,7 @@ class RollingBall5(Scene):
     def construct(self):
         r = 0.4                     # ball radius
         x_stops = [3, 8]            # pause when the bottom ball reaches these graduations
-        x_end = 10                  # bottom ball stops at this graduation
+        x_end = 12                  # bottom ball stops at this graduation
         pause = 2.5                 # seconds of each pause
         top_color, bot_color = BLUE, RED
 
@@ -329,7 +329,7 @@ class RollingBall5(Scene):
                 x_range=[0, 12, 1], length=12,
                 include_numbers=True, font_size=26, color=GREY_B,
             )
-            axis.shift(np.array([-6, y, 0]) - axis.n2p(0))   # graduation 0 at (-6, y)
+            axis.shift(np.array([-6.5, y, 0]) - axis.n2p(0))   # graduation 0 at (-6.5, y)
             dots = DashedLine(axis.n2p(12), RIGHT * config.frame_x_radius + UP * y,
                               dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
             return axis, dots
@@ -373,10 +373,11 @@ class RollingBall5(Scene):
         bot_ball.add_updater(rolling(bot_axis, bot_spin, bot_pos))
 
         # Arrow under each ball, its tip just below the axis, with the current position
-        # and the current velocity written under it
+        # and the current velocity written under it. The arrow leans to the right
+        # so it doesn't cover the axis number under the ball
         def position_marker(axis, position, velocity, name, color):
-            arrow = Arrow(DOWN * 0.87, ORIGIN, buff=0, color=color, stroke_width=4,
-                          max_tip_length_to_length_ratio=0.2)
+            arrow = Arrow(RIGHT * 1.3 + DOWN * 0.87, ORIGIN, buff=0, color=color, stroke_width=4,
+                          max_tip_length_to_length_ratio=0.1)
 
             def readout(symbol):
                 return VGroup(MathTex(symbol + " =", color=color, font_size=34),
@@ -386,11 +387,16 @@ class RollingBall5(Scene):
 
             def follow(mob):
                 s = t.get_value()
-                arrow.next_to(axis.n2p(position(s)), DOWN, buff=0.08)
+                arrow.shift(axis.n2p(position(s)) + DOWN * 0.08 - arrow.get_end())
                 pos_readout[1].set_value(position(s))
                 vel_readout[1].set_value(velocity(s))
                 pos_readout.arrange(RIGHT, buff=0.15).next_to(arrow, DOWN, buff=0.1)
                 vel_readout.arrange(RIGHT, buff=0.15).next_to(pos_readout, DOWN, buff=0.15)
+                # keep the readouts inside the frame near the right edge
+                overflow = VGroup(pos_readout, vel_readout).get_right()[0] - (config.frame_x_radius - 0.15)
+                if overflow > 0:
+                    pos_readout.shift(LEFT * overflow)
+                    vel_readout.shift(LEFT * overflow)
 
             marker = VGroup(arrow, pos_readout, vel_readout)
             follow(marker)
@@ -399,17 +405,6 @@ class RollingBall5(Scene):
 
         top_marker, _, _ = position_marker(top_axis, top_pos, lambda s: 1, "y", top_color)
         bot_marker, bot_readout, bot_vel_readout = position_marker(bot_axis, bot_pos, np.exp, "x", bot_color)
-
-        # Box between the axes with the instantaneous velocity of the bottom ball (v = x)
-        v_label = MathTex("v =", color=bot_color)
-        v_value = DecimalNumber(1, num_decimal_places=2, color=bot_color)
-        v_value.add_updater(lambda m: m.set_value(bot_pos(t.get_value())))
-        v_display = VGroup(v_label, v_value)
-        v_display.add_updater(lambda m: m.arrange(RIGHT, buff=0.2).move_to(DOWN * 0.3))
-        # Fixed-size box, sized for the widest value shown ("v = 10.00")
-        widest = VGroup(MathTex("v ="), DecimalNumber(10)).arrange(RIGHT, buff=0.2)
-        v_box = SurroundingRectangle(widest, color=bot_color, buff=0.25, corner_radius=0.1)
-        v_box.move_to(DOWN * 0.3)
 
         # 1) Time box in the upper left corner (t = y, the top ball's position)
         t_display = VGroup(MathTex("t =", font_size=40), DecimalNumber(0, num_decimal_places=2, font_size=40))
@@ -420,7 +415,7 @@ class RollingBall5(Scene):
         t_display.add_updater(lambda m: m.arrange(RIGHT, buff=0.2).move_to(t_box))
 
         self.add(top_axis, top_dots, bot_axis, bot_dots, p_dot, p_label, stars,
-                 top_ball, bot_ball, top_marker, bot_marker, v_box, v_display, t_box, t_display)
+                 top_ball, bot_ball, top_marker, bot_marker, t_box, t_display)
         self.wait(0.5)
 
         # Roll, pausing at each x in x_stops to show that the velocity equals x
@@ -429,8 +424,7 @@ class RollingBall5(Scene):
             self.play(t.animate.set_value(t_target),
                       run_time=t_target - t.get_value(), rate_func=linear)
             if x_target in x_stops:
-                self.play(Indicate(v_display, color=YELLOW), Indicate(bot_readout, color=YELLOW),
-                          Indicate(bot_vel_readout, color=YELLOW))
+                self.play(Indicate(bot_readout, color=YELLOW), Indicate(bot_vel_readout, color=YELLOW))
                 self.wait(pause - 1)
 
         self.wait(0.5)
