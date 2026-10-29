@@ -208,3 +208,108 @@ class RollingBall3(Scene):
         top_ball.clear_updaters()
         bot_ball.clear_updaters()
         self.wait(0.5)
+
+
+class RollingBall4(Scene):
+    def construct(self):
+        r = 0.4                     # ball radius
+        x_stops = [3, 8]            # pause when the bottom ball reaches these graduations
+        x_end = 10                  # bottom ball stops at this graduation
+        pause = 2.5                 # seconds of each pause
+        top_color, bot_color = BLUE, RED
+
+        # Two graduated axes from 0 (1 graduation = 1 scene unit), each ending in a dotted line
+        def make_axis(y):
+            axis = NumberLine(
+                x_range=[0, 12, 1], length=12,
+                include_numbers=True, font_size=26, color=GREY_B,
+            )
+            axis.shift(np.array([-6, y, 0]) - axis.n2p(0))   # graduation 0 at (-6, y)
+            dots = DashedLine(axis.n2p(12), RIGHT * config.frame_x_radius + UP * y,
+                              dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+            return axis, dots
+
+        top_axis, top_dots = make_axis(2.4)
+        bot_axis, bot_dots = make_axis(-1.4)
+
+        # Point P at graduation 0 of the bottom axis
+        p_dot = Dot(bot_axis.n2p(0), color=YELLOW, radius=0.08)
+        p_label = MathTex("P", color=YELLOW).next_to(p_dot, UP, buff=0.2)
+
+        # Green stars marking the starting positions
+        stars = VGroup(
+            Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(top_axis.n2p(0)),
+            Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(bot_axis.n2p(1)),
+        )
+
+        # Top ball: starts at 0, constant velocity v = 1   ->  y(t) = t
+        # Bottom ball: starts at 1, velocity v = x         ->  x(t) = e^t
+        # so at every instant y = ln(x)
+        top_pos = lambda s: s
+        bot_pos = np.exp
+        top_ball, top_spin = beach_ball(top_axis.n2p(0) + UP * r, r, (top_color, YELLOW))
+        bot_ball, bot_spin = beach_ball(bot_axis.n2p(1) + UP * r, r, (bot_color, WHITE))
+
+        t = ValueTracker(0)
+
+        def rolling(axis, spin, position):
+            # Positions come from the exact formula, so there is no accumulated drift
+            state = {"x": position(0)}
+
+            def roll(mob, dt):
+                x = position(t.get_value())
+                dx = x - state["x"]
+                state["x"] = x
+                mob.shift(RIGHT * dx)
+                spin.rotate(-dx / r, about_point=axis.n2p(x) + UP * r)   # rolling without slipping
+            return roll
+
+        top_ball.add_updater(rolling(top_axis, top_spin, top_pos))
+        bot_ball.add_updater(rolling(bot_axis, bot_spin, bot_pos))
+
+        # Small arrow under each ball (below the axis numbers), with the current position under it
+        def position_marker(axis, position, name, color):
+            arrow = Arrow(DOWN * 0.35, ORIGIN, buff=0, color=color, stroke_width=4,
+                          max_tip_length_to_length_ratio=0.4)
+            readout = VGroup(MathTex(name + " =", color=color, font_size=34),
+                             DecimalNumber(0, num_decimal_places=2, color=color, font_size=34))
+
+            def follow(mob):
+                x = position(t.get_value())
+                arrow.next_to(axis.n2p(x), DOWN, buff=0.6)
+                readout[1].set_value(x)
+                readout.arrange(RIGHT, buff=0.15).next_to(arrow, DOWN, buff=0.1)
+
+            marker = VGroup(arrow, readout)
+            follow(marker)
+            marker.add_updater(follow)
+            return marker, readout
+
+        top_marker, _ = position_marker(top_axis, top_pos, "y", top_color)
+        bot_marker, bot_readout = position_marker(bot_axis, bot_pos, "x", bot_color)
+
+        # Box between the axes with the instantaneous velocity of the bottom ball (v = x)
+        v_label = MathTex("v =", color=bot_color)
+        v_value = DecimalNumber(1, num_decimal_places=2, color=bot_color)
+        v_value.add_updater(lambda m: m.set_value(bot_pos(t.get_value())))
+        v_display = VGroup(v_label, v_value)
+        v_display.add_updater(lambda m: m.arrange(RIGHT, buff=0.2).move_to(UP * 0.35))
+        # Fixed-size box, sized for the widest value shown ("v = 10.00")
+        widest = VGroup(MathTex("v ="), DecimalNumber(10)).arrange(RIGHT, buff=0.2)
+        v_box = SurroundingRectangle(widest, color=bot_color, buff=0.25, corner_radius=0.1)
+        v_box.move_to(UP * 0.35)
+
+        self.add(top_axis, top_dots, bot_axis, bot_dots, p_dot, p_label, stars,
+                 top_ball, bot_ball, top_marker, bot_marker, v_box, v_display)
+        self.wait(0.5)
+
+        # Roll, pausing at each x in x_stops to show that the velocity equals x
+        for x_target in x_stops + [x_end]:
+            t_target = np.log(x_target)
+            self.play(t.animate.set_value(t_target),
+                      run_time=t_target - t.get_value(), rate_func=linear)
+            if x_target in x_stops:
+                self.play(Indicate(v_display, color=YELLOW), Indicate(bot_readout, color=YELLOW))
+                self.wait(pause - 1)
+
+        self.wait(0.5)
