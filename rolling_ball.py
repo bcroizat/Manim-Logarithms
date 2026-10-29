@@ -316,6 +316,10 @@ class RollingBall4(Scene):
 
 
 class RollingBall5(Scene):
+    # Which ball (with its axis and readouts) is shown; the subclasses below turn one off
+    show_top = True
+    show_bot = True
+
     def construct(self):
         r = 0.4                     # ball radius
         x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
@@ -414,8 +418,11 @@ class RollingBall5(Scene):
         t_box.to_corner(UL, buff=0.25)
         t_display.add_updater(lambda m: m.arrange(RIGHT, buff=0.2).move_to(t_box))
 
-        self.add(top_axis, top_dots, bot_axis, bot_dots, p_dot, p_label, stars,
-                 top_ball, bot_ball, top_marker, bot_marker, t_box, t_display)
+        if self.show_top:
+            self.add(top_axis, top_dots, stars[0], top_ball, top_marker)
+        if self.show_bot:
+            self.add(bot_axis, bot_dots, p_dot, p_label, stars[1], bot_ball, bot_marker)
+        self.add(t_box, t_display)
         self.wait(1.5)
 
         # Roll, pausing at each x in x_stops to show that the velocity equals x
@@ -424,9 +431,26 @@ class RollingBall5(Scene):
             self.play(t.animate.set_value(t_target),
                       run_time=t_target - t.get_value(), rate_func=linear)
             if x_target in x_stops:
-                # highlight the bottom (red) values first, then the top (blue) ones
-                self.play(Indicate(bot_readout, color=YELLOW), Indicate(bot_vel_readout, color=YELLOW))
-                self.play(Indicate(top_readout, color=YELLOW), Indicate(top_vel_readout, color=YELLOW))
+                # highlight the bottom (red) values first, then the top (blue) ones;
+                # a hidden ball's highlight becomes a wait so all versions keep the same timing
+                if self.show_bot:
+                    self.play(Indicate(bot_readout, color=YELLOW), Indicate(bot_vel_readout, color=YELLOW))
+                else:
+                    self.wait(1)
+                if self.show_top:
+                    self.play(Indicate(top_readout, color=YELLOW), Indicate(top_vel_readout, color=YELLOW))
+                else:
+                    self.wait(1)
                 self.wait(pause - 2)
 
         self.wait(1.5)
+
+
+class RollingBall5Bottom(RollingBall5):
+    # Only the bottom axis and the red ball (v = x)
+    show_top = False
+
+
+class RollingBall5Top(RollingBall5):
+    # Only the top axis and the blue ball (v = 1)
+    show_bot = False
