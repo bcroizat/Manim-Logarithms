@@ -1,13 +1,6 @@
 from manim import *
 
 
-class DecimalComma(DecimalNumber):
-    """DecimalNumber written with a decimal comma: 2,72 instead of 2.72."""
-
-    def _get_num_string(self, number):
-        return super()._get_num_string(number).replace(".", ",")
-
-
 def beach_ball(c, r, colors):
     """Shaded beach ball centred at c. Returns (ball, spin): only `spin` should rotate."""
     # AnnularSector with inner_radius=0 is a pie slice (Sector(radius=...) is ignored in manim 0.18)
@@ -55,8 +48,8 @@ class BaseE(Scene):
         e = np.exp(1)
 
         def number(value, color=WHITE, font_size=48):
-            return DecimalComma(value, num_decimal_places=2, color=color, font_size=font_size,
-                                group_with_commas=False)
+            return DecimalNumber(value, num_decimal_places=2, color=color, font_size=font_size,
+                                 group_with_commas=False)
 
         # Two graduated axes from 0 to 12 (1 graduation = 1 scene unit), each ending in a dotted line
         def make_axis(y):
@@ -69,7 +62,45 @@ class BaseE(Scene):
                                for k in range(13)])
             return VGroup(line, dots, ticks, numbers)
 
-        top_axis, bot_axis = make_axis(top_y), make_axis(bot_y)
+        bot_axis = make_axis(bot_y)
+
+        # The top axis first runs from 0 to 12 like the bottom one; at the end it turns into an
+        # axis from -7 to 7 centred on the screen (morph goes from 0 to 1). A fixed set of
+        # ticks and numbers from -7 to 12 is moved, shown or hidden as it changes
+        morph = ValueTracker(0)
+        top_k = range(-7, 13)
+        new_unit = 13 / 14                  # screen units per graduation on the -7..7 axis
+
+        def top_unit():
+            m = morph.get_value()
+            return (1 - m) + m * new_unit
+
+        def top_screen(v):
+            m = morph.get_value()
+            return (1 - m) * (x0 + v) + m * v * new_unit
+
+        top_line = Line(np.array([x0, top_y, 0]), np.array([x0 + 12, top_y, 0]), color=GREY_B, stroke_width=2)
+        right_dots = DashedLine(np.array([x0 + 12, top_y, 0]), RIGHT * config.frame_x_radius + UP * top_y,
+                                dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+        left_dots = DashedLine(LEFT * config.frame_x_radius + UP * top_y, np.array([x0, top_y, 0]),
+                               dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+        top_ticks = VGroup(*[Line(DOWN * 0.1, UP * 0.1, color=GREY_B, stroke_width=2) for k in top_k])
+        top_numbers = VGroup(*[MathTex(str(k), font_size=26) for k in top_k])
+
+        def draw_top_axis(group):
+            m = morph.get_value()
+            top_line.put_start_and_end_on(np.array([x0, top_y, 0]),
+                                          np.array([(1 - m) * (x0 + 12) + m * 6.5, top_y, 0]))
+            left_dots.set_stroke(opacity=m)
+            for k, tick, num in zip(top_k, top_ticks, top_numbers):
+                opacity = m if k < 0 else (1 - m if k > 7 else 1)
+                point = np.array([top_screen(k), top_y, 0])
+                tick.move_to(point).set_stroke(opacity=opacity)
+                num.next_to(point, DOWN, buff=0.25).set_opacity(opacity)
+
+        top_axis = VGroup(right_dots, left_dots, top_line, top_ticks, top_numbers)  # dots under the line
+        draw_top_axis(top_axis)
+        top_axis.add_updater(draw_top_axis)
 
         def bot_point(x):
             return np.array([x0 + x, bot_y, 0])
@@ -81,24 +112,35 @@ class BaseE(Scene):
             Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(np.array([x0, top_y, 0])),
             Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(bot_point(1)),
         )
+        stars[0].add_updater(lambda m: m.move_to(np.array([top_screen(0), top_y, 0])))
 
         # Top ball: y(t) = t (velocity 1).   Bottom ball: x(t) = e^t (velocity x), so y = ln(x)
         t = ValueTracker(0)
         top_ball, top_spin = beach_ball(np.array([x0, top_y + r, 0]), r, (top_color, YELLOW))
         bot_ball, bot_spin = beach_ball(bot_point(1) + UP * r, r, (bot_color, WHITE))
 
-        def rolling(spin, get_x):
-            # the ball follows get_x() and turns as if rolling without slipping
-            state = {"x": get_x()}
+        def rolling(spin, get_x, get_turn=None):
+            # the ball follows get_x() and turns by get_turn() (by default: as far as it moves),
+            # as if rolling without slipping
+            get_turn = get_turn or get_x
+            state = {"x": get_x(), "turn": get_turn()}
 
             def roll(mob, dt):
-                x = get_x()
+                x, turn = get_x(), get_turn()
                 mob.shift(RIGHT * (x - state["x"]))
-                spin.rotate(-(x - state["x"]) / r, about_point=spin.get_center())
-                state["x"] = x
+                spin.rotate(-(turn - state["turn"]) / r, about_point=spin.get_center())
+                state["x"], state["turn"] = x, turn
             return roll
 
-        top_ball.add_updater(rolling(top_spin, lambda: x0 + t.get_value()))
+        # The blue ball only turns when it rolls along its axis, not when the axis is reshaped
+        top_turn = {"t": 0, "dist": 0}
+
+        def top_rolled():
+            top_turn["dist"] += (t.get_value() - top_turn["t"]) * top_unit()
+            top_turn["t"] = t.get_value()
+            return top_turn["dist"]
+
+        top_ball.add_updater(rolling(top_spin, lambda: top_screen(t.get_value()), top_rolled))
         bot_ball.add_updater(rolling(bot_spin, lambda: x0 + np.exp(t.get_value())))
 
         # Arrow under each ball, leaning right so it doesn't cover the axis number under the ball
@@ -109,7 +151,7 @@ class BaseE(Scene):
             arrow.update()
             return arrow
 
-        top_arrow = lean_arrow(lambda: np.array([x0 + t.get_value(), top_y, 0]), top_color)
+        top_arrow = lean_arrow(lambda: np.array([top_screen(t.get_value()), top_y, 0]), top_color)
         bot_arrow = lean_arrow(lambda: bot_point(np.exp(t.get_value())), bot_color)
 
         # Current positions written under the arrows' tails
@@ -188,17 +230,17 @@ class BaseE(Scene):
         # ---- 2) Time flows slowly up to exactly t = 1: then x = e ----
         roll_to(1)
         self.wait(0.5)
-        x_bold = MathTex(r"x = \mathbf{2{,}72}", color=bot_color, font_size=40).next_to(
+        x_bold = MathTex(r"x = \mathbf{2.72}", color=bot_color, font_size=40).next_to(
             bot_arrow.get_start(), DOWN, buff=0.1)
         x_read.clear_updaters()     # a value cannot keep updating while it is being transformed
         self.play(ReplacementTransform(x_read, x_bold))
         self.play(Circumscribe(x_bold, color=YELLOW))
-        x_full = MathTex(r"x = 2{,}7182818\ldots", color=bot_color, font_size=36).next_to(x_bold, DOWN, buff=0.2)
+        x_full = MathTex(r"x = 2.7182818\ldots", color=bot_color, font_size=36).next_to(x_bold, DOWN, buff=0.2)
         self.play(Write(x_full), run_time=2)
         self.wait(0.5)
 
         # e = 2,7182818... joins the central box, next to ln(x) = y
-        e_text = MathTex("e", "=", r"2{,}7182818\ldots")
+        e_text = MathTex("e", "=", r"2.7182818\ldots")
         e_text[2].set_color(bot_color)
         layout = VGroup(eq_widest.copy(), e_text.copy()).arrange(RIGHT, buff=0.8).move_to(UP * 0.15)
         e_text.move_to(layout[1])
@@ -215,7 +257,7 @@ class BaseE(Scene):
         self.play(LaggedStart(*[FadeOut(n, shift=DOWN * 0.3) for n in old_numbers], lag_ratio=0.06),
                   FadeOut(old_ticks), run_time=1.5)
 
-        powers = [(0.5, r"e^{0{,}5}"), (1, "e"), (1.5, r"e^{1{,}5}"), (2, "e^{2}"), (2.45, r"e^{2{,}45}")]
+        powers = [(0.5, r"e^{0.5}"), (1, "e"), (1.5, r"e^{1.5}"), (2, "e^{2}"), (2.45, r"e^{2.45}")]
         e_ticks, e_labels = VGroup(), VGroup()
         for p, tex in powers:
             point = bot_point(np.exp(p))
@@ -275,7 +317,7 @@ class BaseE(Scene):
         column = VGroup(general.copy(), live_widest).arrange(DOWN, buff=0.2)
         final_layout = VGroup(column, e_text.copy()).arrange(RIGHT, buff=0.8).move_to(DOWN * 0.1)
         general.move_to(column[0])
-        live_anchor = column[1].get_center()
+        live_anchor = VectorizedPoint(column[1].get_center())
 
         live = exp_equation(0)
 
@@ -284,7 +326,7 @@ class BaseE(Scene):
             m[2].set_value(s)
             m[5].set_value(s)
             arrange_exp_equation(m)
-            m.move_to(live_anchor)
+            m.move_to(live_anchor.get_center())
 
         update_live(live)
 
@@ -307,4 +349,24 @@ class BaseE(Scene):
               general[6].animate.set_color(top_color))
         swing(2.0, Indicate(live[2], color=YELLOW), Indicate(live[5], color=YELLOW))
         swing(1.0)
+        self.wait(3)
+
+        # ---- 6) The top axis stretches to negative values, then time runs backwards ----
+        # The time box and the central box widen for the minus signs
+        wide_time = VGroup(MathTex("t =", font_size=40), number(-7, WHITE, 40)).arrange(RIGHT, buff=0.2)
+        wide_t_box = SurroundingRectangle(wide_time, color=WHITE, buff=0.15, corner_radius=0.1).to_corner(UL, buff=0.25)
+        live_negative = exp_equation(-7)
+        arrange_exp_equation(live_negative)
+        column = VGroup(general.copy(), live_negative).arrange(DOWN, buff=0.2)
+        negative_layout = VGroup(column, e_text.copy()).arrange(RIGHT, buff=0.8).move_to(DOWN * 0.1)
+        self.add(live_anchor)
+        self.play(morph.animate.set_value(1), Transform(t_box, wide_t_box),
+                  Transform(box, frame_box(negative_layout, buff=0.2)),
+                  general.animate.move_to(column[0]), live_anchor.animate.move_to(column[1].get_center()),
+                  e_text.animate.move_to(negative_layout[1]), run_time=3, rate_func=smooth)
+        self.wait(1)
+
+        roll_to(-7, speed=2.5)
+        self.wait(1.5)
+        roll_to(0, speed=2.5)
         self.wait(3)
