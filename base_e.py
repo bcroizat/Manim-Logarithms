@@ -79,26 +79,48 @@ class BaseE(Scene):
             m = morph.get_value()
             return (1 - m) * (x0 + v) + m * v * new_unit
 
-        top_line = Line(np.array([x0, top_y, 0]), np.array([x0 + 12, top_y, 0]), color=GREY_B, stroke_width=2)
-        right_dots = DashedLine(np.array([x0 + 12, top_y, 0]), RIGHT * config.frame_x_radius + UP * top_y,
-                                dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
-        left_dots = DashedLine(LEFT * config.frame_x_radius + UP * top_y, np.array([x0, top_y, 0]),
-                               dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+        # Pieces of the top axis line. While it reshapes, what lies beyond the graduations 7 and
+        # -7 becomes dotted on both sides: beyond 7 the solid line fades into a dotted one that
+        # starts at graduation 7, and beyond -7 a dotted line fades in
+        edge = config.frame_x_radius
+
+        def top_point(x):
+            return np.array([x, top_y, 0])
+
+        def solid():
+            return Line(LEFT, RIGHT, color=GREY_B, stroke_width=2)
+
+        def dotted(x_start, x_end):
+            x_start = min(max(x_start, -edge), edge - 0.05)
+            x_end = max(min(x_end, edge), x_start + 0.05)
+            return DashedLine(top_point(x_start), top_point(x_end), dash_length=0.06, dashed_ratio=0.5,
+                              color=GREY_B)
+
+        main_line, negative_line, beyond_7_line = solid(), solid(), solid()   # 0..7, -7..0, 7..12
+        right_dots = dotted(x0 + 12, edge)              # after 12 (before the change)
+        right_new_dots = dotted(x0 + 7, edge)           # after 7 (after the change)
+        left_dots = dotted(-edge, x0 - 7)               # before -7 (after the change)
         top_ticks = VGroup(*[Line(DOWN * 0.1, UP * 0.1, color=GREY_B, stroke_width=2) for k in top_k])
         top_numbers = VGroup(*[MathTex(str(k), font_size=26) for k in top_k])
 
         def draw_top_axis(group):
             m = morph.get_value()
-            top_line.put_start_and_end_on(np.array([x0, top_y, 0]),
-                                          np.array([(1 - m) * (x0 + 12) + m * 6.5, top_y, 0]))
-            left_dots.set_stroke(opacity=m)
+            main_line.put_start_and_end_on(top_point(top_screen(0)), top_point(top_screen(7)))
+            negative_line.put_start_and_end_on(top_point(top_screen(-7)), top_point(top_screen(0)))
+            negative_line.set_stroke(opacity=m)
+            beyond_7_line.put_start_and_end_on(top_point(top_screen(7)), top_point(top_screen(12)))
+            beyond_7_line.set_stroke(opacity=1 - m)
+            right_dots.become(dotted(top_screen(12), edge)).set_stroke(opacity=1 - m)
+            right_new_dots.become(dotted(top_screen(7), edge)).set_stroke(opacity=m)
+            left_dots.become(dotted(-edge, top_screen(-7))).set_stroke(opacity=m)
             for k, tick, num in zip(top_k, top_ticks, top_numbers):
                 opacity = m if k < 0 else (1 - m if k > 7 else 1)
-                point = np.array([top_screen(k), top_y, 0])
+                point = top_point(top_screen(k))
                 tick.move_to(point).set_stroke(opacity=opacity)
                 num.next_to(point, DOWN, buff=0.25).set_opacity(opacity)
 
-        top_axis = VGroup(right_dots, left_dots, top_line, top_ticks, top_numbers)  # dots under the line
+        top_axis = VGroup(right_dots, right_new_dots, left_dots, main_line, negative_line, beyond_7_line,
+                          top_ticks, top_numbers)
         draw_top_axis(top_axis)
         top_axis.add_updater(draw_top_axis)
 
@@ -368,5 +390,7 @@ class BaseE(Scene):
 
         roll_to(-7, speed=2.5)
         self.wait(1.5)
+        roll_to(1, speed=2.5)
+        self.wait(0.5)
         roll_to(0, speed=2.5)
         self.wait(3)
