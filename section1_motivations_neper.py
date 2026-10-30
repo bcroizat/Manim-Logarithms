@@ -1,7 +1,7 @@
 from manim import *
 import numpy as np
 
-# Titre de section « 1. Les motivations de Neper » (≈ 3,6 s)
+# Titre de section « 1. Les motivations de Napier » (≈ 3,7 s)
 # Même ambiance que Titre_Histoire_de_logarithmes.mp4 : nuit bleue, étoiles, or.
 # Un petit ballon doré roule sous le titre et trace le trait, puis un reflet
 # de lumière parcourt les lettres.
@@ -59,7 +59,7 @@ class TitreSection1(Scene):
 
         # Titre
         numero = Text("1.", font=POLICE, color=OR, font_size=110)
-        titre = Text("Les motivations de Neper", font=POLICE, color=CREME, font_size=84)
+        titre = Text("Les motivations de Napier", font=POLICE, color=CREME, font_size=84)
         bloc = VGroup(numero, titre).arrange(RIGHT, buff=0.45, aligned_edge=DOWN)
         if bloc.width > 12:
             bloc.scale_to_fit_width(12)
@@ -90,7 +90,7 @@ class TitreSection1(Scene):
         trait.add_updater(lambda m: m.put_start_and_end_on(
             np.array([x_debut, y_trait, 0]), np.array([max(x_ballon(), x_debut + 0.01), y_trait, 0])))
 
-        # Animation (≈ 3,6 s)
+        # Animation (≈ 3,7 s)
         etoiles.add_updater(scintille)
         self.add(halo)
         self.play(
