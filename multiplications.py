@@ -66,7 +66,8 @@ class Multiplications(Scene):
         top_unit = axis_length / 4  # the top axis runs from 0 to 4 across the same width
         top_arrow_y = top_y + 2 * r + 0.3   # height of the growing double arrows
         bot_arrow_y = bot_y + 2 * r + 0.3
-        eq_center = UP * 0.75       # centre of the box between the two axes
+        eq_center = UP * 0.6        # centre of the box between the two axes
+        jump_height = 0.8           # height of the balls' jumps
 
         def top_x(v):
             return x0 + v * top_unit
@@ -103,22 +104,34 @@ class Multiplications(Scene):
         top_ball, top_spin = beach_ball(np.array([top_x(0), top_y + r, 0]), r, (top_color, YELLOW))
         bot_ball, bot_spin = beach_ball(np.array([bot_x(1), bot_y + r, 0]), r, (bot_color, WHITE))
 
-        def rolling(spin, radius, get_x):
-            # the ball follows get_x() and turns as if rolling without slipping on screen
-            state = {"x": get_x()}
+        # Each big ball can also be moved ahead of t by Δt with a jump (used for A × D):
+        # while its shift goes from 0 to Δt, the ball flies over the axis along an arc
+        shift_top, shift_bot = ValueTracker(0), ValueTracker(0)
+
+        def jump_lift(shift):
+            p = shift.get_value() / delta_t
+            return jump_height * 4 * p * (1 - p) if 0 < p < 1 else 0
+
+        def rolling(spin, radius, get_x, get_lift=lambda: 0):
+            # the ball follows get_x() and turns as if rolling without slipping on screen;
+            # while it is in the air (get_lift() > 0) it does not turn
+            state = {"x": get_x(), "lift": get_lift()}
 
             def roll(mob, dt):
-                x = get_x()
+                x, lift = get_x(), get_lift()
                 dx = x - state["x"]
-                state["x"] = x
-                mob.shift(RIGHT * dx)
-                spin.rotate(-dx / radius, about_point=spin.get_center())
+                mob.shift(RIGHT * dx + UP * (lift - state["lift"]))
+                if lift == 0 and state["lift"] == 0:
+                    spin.rotate(-dx / radius, about_point=spin.get_center())
+                state["x"], state["lift"] = x, lift
             return roll
 
         top_ball.set_z_index(1)     # balls stay in front of ticks and arrows
         bot_ball.set_z_index(1)
-        top_ball.add_updater(rolling(top_spin, r, lambda: top_x(t.get_value())))
-        bot_ball.add_updater(rolling(bot_spin, r, lambda: bot_x(np.exp(t.get_value()))))
+        top_ball.add_updater(rolling(top_spin, r, lambda: top_x(t.get_value() + shift_top.get_value()),
+                                     lambda: jump_lift(shift_top)))
+        bot_ball.add_updater(rolling(bot_spin, r, lambda: bot_x(np.exp(t.get_value() + shift_bot.get_value())),
+                                     lambda: jump_lift(shift_bot)))
 
         # Double arrow that keeps stretching between two moving points
         def growing_arrow(get_start, get_end, color):
@@ -224,8 +237,9 @@ class Multiplications(Scene):
                   run_time=1.5)
         self.wait(1.5)
 
-        # ---- 3) Back to the start, then half a step: the square root ----
-        self.play(t.animate.set_value(0), run_time=2.5, rate_func=smooth)
+        # ---- 3) Back to the start (the grey graduations go), then half a step: the square root ----
+        self.play(t.animate.set_value(0), FadeOut(top_axis[2]), FadeOut(bot_axis[2]),
+                  run_time=2.5, rate_func=smooth)
 
         top_arrow = growing_arrow(lambda: np.array([top_x(0), top_arrow_y, 0]), top_ball_point(top_arrow_y), top_color)
         bot_arrow = growing_arrow(lambda: np.array([bot_x(1), bot_arrow_y, 0]), bot_ball_point(bot_arrow_y), bot_color)
@@ -279,8 +293,7 @@ class Multiplications(Scene):
         self.play(t.animate.set_value(0), run_time=2.5, rate_func=smooth)
 
         A = ValueTracker(1)
-        shift_t = ValueTracker(0)   # 0: red ball on A;  Δt: red ball on A × D
-        t.add_updater(lambda m: m.set_value(np.log(A.get_value()) + shift_t.get_value()))
+        t.add_updater(lambda m: m.set_value(np.log(A.get_value())))
         self.add(t)
 
         def sweep(start=None):
@@ -290,23 +303,29 @@ class Multiplications(Scene):
             self.play(A.animate.set_value(5), run_time=2.5, rate_func=smooth)
             self.play(A.animate.set_value(2), run_time=1.8, rate_func=smooth)
 
-        def marker(get_value, color, tex):
+        # Big graduation following a moving value (screen position given by get_x)
+        def marker(get_x, y, color, tex):
             tick = Line(DOWN * 0.3, UP * 0.3, color=color, stroke_width=7)
-            tick.add_updater(lambda m: m.move_to(np.array([bot_x(get_value()), bot_y, 0])))
+            tick.add_updater(lambda m: m.move_to(np.array([get_x(), y, 0])))
             name = MathTex(tex, color=color, font_size=40)
-            name.add_updater(lambda m: m.move_to(np.array([bot_x(get_value()), bot_y - 0.85, 0])))
+            name.add_updater(lambda m: m.move_to(np.array([get_x(), y - 0.82, 0])))
             tick.update()
             name.update()
             return tick, name
 
-        a_tick, a_name = marker(A.get_value, a_color, "A")
-        self.play(Create(a_tick), Write(a_name))
+        a_tick, a_name = marker(lambda: bot_x(A.get_value()), bot_y, a_color, "A")
+        ln_a_tick, ln_a_name = marker(lambda: top_x(np.log(A.get_value())), top_y, BLUE_E, r"\ln(A)")
+        self.play(Create(a_tick), Write(a_name), Create(ln_a_tick), Write(ln_a_name))
         sweep()
 
-        # ---- 6) A × D: the red ball now sits on A × D ----
-        ad_tick, ad_name = marker(lambda: A.get_value() * D, PURE_RED, r"A \times D")
+        # ---- 6) A × D: the red ball jumps onto A × D, then the blue ball onto ln(A × D) ----
+        ad_tick, ad_name = marker(lambda: bot_x(A.get_value() * D), bot_y, PURE_RED, r"A \times D")
         self.play(Create(ad_tick), Write(ad_name))
-        self.play(shift_t.animate.set_value(delta_t), run_time=2, rate_func=smooth)
+        self.play(shift_bot.animate.set_value(delta_t), run_time=1.2, rate_func=smooth)
+        ln_ad_tick, ln_ad_name = marker(lambda: top_x(np.log(A.get_value() * D)), top_y, BLUE_B,
+                                        r"\ln(A \times D)")
+        self.play(Create(ln_ad_tick), Write(ln_ad_name))
+        self.play(shift_top.animate.set_value(delta_t), run_time=1.2, rate_func=smooth)
         sweep(start=1)
 
         # ---- 7) A second, smaller ball on each axis: on A (red) and on ln(A) (blue) ----
