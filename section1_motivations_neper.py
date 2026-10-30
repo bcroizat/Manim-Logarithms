@@ -1,12 +1,19 @@
 from manim import *
 import numpy as np
 
-# Titre de section « 1. Les motivations de Napier » (≈ 3,7 s)
+# Titres des sections (≈ 3,7 s chacun), une scène par section :
+#   TitreSection1 « 1. Les motivations de Neper »
+#   TitreSection2 « 2. Construction cinématique »
+#   TitreSection3 « 3. La magie des multiplications »
+#   TitreSection4 « 4. Base du logarithme népérien (et exponentielle) »
+#   TitreSection5 « 5. Logarithmes dans d’autres bases »
 # Même ambiance que Titre_Histoire_de_logarithmes.mp4 : nuit bleue, étoiles, or.
 # Un petit ballon doré roule sous le titre et trace le trait, puis un reflet
 # de lumière parcourt les lettres.
-# Rendu 1080p à 30 i/s (comme l'autre titre) :
+# Rendu 1080p à 30 i/s (comme l'autre titre), par exemple :
 #   manim -qh --fps 30 section1_motivations_neper.py TitreSection1
+# ou toutes les sections d'un coup :
+#   manim -qh --fps 30 -a section1_motivations_neper.py
 
 BG = "#0B1424"
 OR = "#F0CF7A"
@@ -27,7 +34,13 @@ def ballon(c, r, couleurs):
     return VGroup(quartiers, reflet, contour), quartiers
 
 
-class TitreSection1(Scene):
+class TitreSection:
+    """Modèle commun : chaque section ne fait que choisir son numéro et son titre.
+    (Ce n'est pas une scène en soi, sinon « manim -a » essaierait de la rendre.)"""
+    numero_texte = "1."
+    titre_texte = ""
+    sous_titre_texte = None     # seconde ligne plus petite, pour les titres longs
+
     def construct(self):
         self.camera.background_color = BG
 
@@ -58,9 +71,16 @@ class TitreSection1(Scene):
                 d.set_opacity(0.45 + 0.35 * np.sin(d.phase + 3 * horloge["t"]))
 
         # Titre
-        numero = Text("1.", font=POLICE, color=OR, font_size=110)
-        titre = Text("Les motivations de Napier", font=POLICE, color=CREME, font_size=84)
-        bloc = VGroup(numero, titre).arrange(RIGHT, buff=0.45, aligned_edge=DOWN)
+        numero = Text(self.numero_texte, font=POLICE, color=OR, font_size=110)
+        titre = Text(self.titre_texte, font=POLICE, color=CREME, font_size=84)
+        VGroup(numero, titre).arrange(RIGHT, buff=0.45, aligned_edge=DOWN)
+        lettres = VGroup(*titre)
+        if self.sous_titre_texte:
+            sous_titre = Text(self.sous_titre_texte, font=POLICE, color=CREME, font_size=60)
+            sous_titre.next_to(titre, DOWN, buff=0.3)
+            titre = VGroup(titre, sous_titre)    # écrit, puis effacé, avec le titre
+            lettres.add(*sous_titre)
+        bloc = VGroup(numero, titre)
         if bloc.width > 12:
             bloc.scale_to_fit_width(12)
         bloc.move_to(UP * 0.3)
@@ -112,7 +132,7 @@ class TitreSection1(Scene):
         )
         # Reflet de lumière qui parcourt les lettres, étincelle au bout du trait
         self.play(
-            LaggedStart(*[lettre.animate(rate_func=there_and_back).set_color(WHITE) for lettre in titre],
+            LaggedStart(*[lettre.animate(rate_func=there_and_back).set_color(WHITE) for lettre in lettres],
                         lag_ratio=0.06),
             Flash(boule.get_center(), color=OR, flash_radius=0.35, line_length=0.18),
             numero.animate(rate_func=there_and_back).set_color(WHITE),
@@ -120,3 +140,29 @@ class TitreSection1(Scene):
         )
         self.wait(0.25)
         self.play(FadeOut(VGroup(halo, etoiles, bloc, trait, boule)), run_time=0.4)
+
+
+class TitreSection1(TitreSection, Scene):
+    numero_texte = "1."
+    titre_texte = "Les motivations de Neper"
+
+
+class TitreSection2(TitreSection, Scene):
+    numero_texte = "2."
+    titre_texte = "Construction cinématique"
+
+
+class TitreSection3(TitreSection, Scene):
+    numero_texte = "3."
+    titre_texte = "La magie des multiplications"
+
+
+class TitreSection4(TitreSection, Scene):
+    numero_texte = "4."
+    titre_texte = "Base du logarithme népérien"
+    sous_titre_texte = "(et exponentielle)"
+
+
+class TitreSection5(TitreSection, Scene):
+    numero_texte = "5."
+    titre_texte = "Logarithmes dans d’autres bases"
