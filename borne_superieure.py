@@ -23,7 +23,7 @@ COL_SUP = "#f7c948"    # sup(A)
 # ----------------------------------------------------------------- données
 S = 6.4                # sup(A) (non atteint : les points s'accumulent à gauche de S)
 D0, K0 = 3.2, 9.0      # départ : D au milieu de A, K majorant bien au-dessus de sup(A)
-N_STEPS = 15
+N_STEPS = 16
 LAST_ZOOM_STEP = 9     # après cette étape on ne zoome plus : on regarde D et K se rapprocher
 VIEW0 = (-0.5, 10.5)   # fenêtre initiale sur la droite réelle
 X0, X1 = -6.3, 6.3     # étendue de l'axe à l'écran
@@ -186,6 +186,7 @@ class BorneSuperieure(Scene):
         self.m_tr = ValueTracker(D0)
         self.zone_op = ValueTracker(0)
         self.hist_d, self.hist_k = [], []
+        self.D_seq = [D0]      # D_0, D_1, D_2, ... (valeurs de D après chaque étape)
 
         self.intro_title()
         self.present_set()
@@ -436,6 +437,7 @@ class BorneSuperieure(Scene):
 
         M.clear_updaters()
         self.remove(M)
+        self.D_seq.append(self.d.get_value())
         new_table = self.make_table(n)
         self.play(FadeOut(tmp), FadeOut(scan), Transform(self.table, new_table), run_time=rt)
         if level == 0:
@@ -467,7 +469,7 @@ class BorneSuperieure(Scene):
 
         # 2) Apparition de la limite (pointillés orangés)
         sup_line = always_redraw(lambda: DashedLine(
-            [self.sx(S), AY - 0.9, 0], [self.sx(S), AY + 1.2, 0],
+            [self.sx(S), AY - 0.55, 0], [self.sx(S), AY + 1.2, 0],
             color=COL_SUP, dash_length=0.08, stroke_width=3))
         ell = MathTex(r"\ell", color=COL_SUP).scale(1.0)
         ell.add_updater(lambda mob: mob.move_to([self.sx(S), AY + 1.6, 0]))
@@ -476,25 +478,94 @@ class BorneSuperieure(Scene):
 
         # 3) Pourquoi cette limite est la borne supérieure
         self.play(FadeOut(self.obs))
-        p1 = VGroup(MathTex(r"\ell", color=COL_SUP), fr("majore A :", 26),
-                    MathTex(r"\forall a\in A,\ a\le K_n\ \text{pour tout } n"),
-                    MathTex(r"\ \Longrightarrow\ a\le\ell")).arrange(RIGHT, buff=0.18)
-        p2 = VGroup(fr("si", 26), MathTex(r"M'"), fr("majore A :", 26),
-                    MathTex(r"D_n<M'\ \text{pour tout } n"),
-                    MathTex(r"\ \Longrightarrow\ \ell\le M'")).arrange(RIGHT, buff=0.18)
-        p2b = VGroup(fr("(car", 22, GREY_B), MathTex(r"D_n", color=GREY_B),
-                     fr("ne majore pas A : un élément de A dépasse", 22, GREY_B),
-                     MathTex(r"D_n", color=GREY_B), fr("et reste", 22, GREY_B),
-                     MathTex(r"\le M')", color=GREY_B)).arrange(RIGHT, buff=0.12)
-        p3 = VGroup(MathTex(r"\ell", color=COL_SUP), fr("est le plus petit des majorants de A :", 26),
-                    MathTex(r"\ell=\sup(A)", color=COL_SUP)).arrange(RIGHT, buff=0.18)
-        proof = VGroup(p1, p2, p2b, p3)
-        for p in proof:
-            p.scale(0.85)
-        proof.arrange(DOWN, buff=0.2).next_to([0, AY - 0.95, 0], DOWN, buff=0)
-        for p in proof:
-            self.play(FadeIn(p, shift=UP * 0.15), run_time=0.8)
-            self.wait(1.2)
+        SC = 0.82
+        tsz = 26
+
+        def line(*parts, y):
+            g = VGroup(*parts).arrange(RIGHT, buff=0.2).scale(SC)
+            g.move_to([0, y, 0])
+            return g
+
+        def show(*parts, rt=0.7, pause=0.5):
+            for part in parts:
+                self.play(FadeIn(part, shift=RIGHT * 0.1), run_time=rt)
+                self.wait(pause)
+
+        ys = [AY - 0.98 - 0.47 * i for i in range(6)]
+
+        # --- (i) ℓ majore A
+        L1 = line(MathTex(r"\forall a\in A,\ \forall n,\ a\le K_n"),
+                  MathTex(r"\underset{n\to+\infty}{\Longrightarrow}"),
+                  MathTex(r"\forall a\in A,\ a\le\ell"),
+                  MathTex(r"\Longrightarrow"),
+                  VGroup(MathTex(r"\ell", color=COL_SUP), fr("majore A", tsz, COL_SUP)).arrange(RIGHT, buff=0.15),
+                  y=ys[0])
+        show(*L1, pause=0.7)
+        self.wait(1)
+
+        # --- (ii) ℓ est le plus petit : on prend ℓ − ε un peu plus petit que ℓ
+        # rang N (dans la phase sans zoom) où D fait un vrai pas, et ℓ−ε juste avant D_N
+        frozen_ns = range(LAST_ZOOM_STEP + 2, len(self.D_seq))
+        N = next(n for n in frozen_ns if self.D_seq[n] > self.D_seq[n - 1])
+        DN = self.D_seq[N]
+        LE = self.D_seq[N - 1] + 0.35 * (DN - self.D_seq[N - 1])      # valeur de ℓ − ε
+
+        L2 = line(fr("Prenons un réel", tsz), MathTex(r"\ell-\varepsilon", color=COL_NO),
+                  fr("un peu plus petit que", tsz), MathTex(r"\ell", color=COL_SUP),
+                  MathTex(r"\ (\varepsilon>0)"), y=ys[1])
+        xe = self.sx(LE)
+        e_line = DashedLine([xe, AY - 0.55, 0], [xe, AY + 1.2, 0], color=COL_NO,
+                            dash_length=0.08, stroke_width=3)
+        e_lab = MathTex(r"\ell-\varepsilon", color=COL_NO).scale(0.8).move_to([xe, AY + 1.6, 0])
+        show(L2[0])
+        self.play(FadeIn(VGroup(*L2[1:])), Create(e_line), FadeIn(e_lab), run_time=1)
+        self.wait(1.2)
+
+        L3 = line(fr("Comme", tsz), MathTex(r"D_n\to\ell", color=COL_D),
+                  fr(", à une certaine étape", tsz), MathTex(r"N", color=COL_D),
+                  fr(":", tsz), MathTex(rf"D_{{{N}}}>\ell-\varepsilon", color=COL_D), y=ys[2])
+        xdn = self.sx(DN)
+        dn_mark = VGroup(
+            Line([xdn, AY - 0.3, 0], [xdn, AY + 0.3, 0], color=COL_D, stroke_width=6),
+            Triangle(fill_color=COL_D, fill_opacity=1, stroke_width=0).scale(0.11).rotate(PI)
+            .move_to([xdn, AY + 0.42, 0]),
+            MathTex(rf"D_{{{N}}}", color=COL_D).scale(0.75).move_to([xdn, AY + 1.15, 0]))
+        span = Arrow([xe, AY + 0.72, 0], [xdn, AY + 0.72, 0], buff=0.05, color=COL_D,
+                     stroke_width=3, max_tip_length_to_length_ratio=0.25)
+        show(*L3[:3], pause=0.3)
+        self.play(FadeIn(L3[3:]), FadeIn(dn_mark, shift=DOWN * 0.2), run_time=0.9)
+        self.play(GrowArrow(span), Flash(dn_mark[0].get_top(), color=COL_D, flash_radius=0.3),
+                  run_time=0.9)
+        self.wait(1.2)
+
+        L4 = line(fr("Or, par construction,", tsz), MathTex(rf"D_{{{N}}}", color=COL_D),
+                  fr("n'est pas un majorant de A :", tsz),
+                  MathTex(rf"\exists\, a\in A,\ a>D_{{{N}}}", color=COL_NO), y=ys[3])
+        cand = self.A[(self.A > DN) & (self.A < S)]
+        wa = cand[np.argmin(np.abs(cand - (DN + S) / 2))]
+        pa = np.array([self.sx(wa), AY, 0.0])
+        w_ring = Circle(radius=0.17, color=COL_NO, stroke_width=4).move_to(pa)
+        w_dot = Dot(pa, radius=0.085, color=COL_NO)
+        w_lab = MathTex("a", color=COL_NO).scale(0.75).move_to(pa + UP * 0.5)
+        show(*L4[:3], pause=0.4)
+        self.play(FadeIn(L4[3]), FadeIn(w_dot, scale=1.6), Create(w_ring), FadeIn(w_lab), run_time=1)
+        self.wait(1.2)
+
+        L5 = line(fr("donc", tsz), MathTex(r"a>\ell-\varepsilon"), fr(":", tsz),
+                  MathTex(r"\ell-\varepsilon", color=COL_NO),
+                  fr("n'est pas un majorant de A non plus !", tsz, COL_NO), y=ys[4])
+        show(*L5[:2], pause=0.4)
+        self.play(FadeIn(L5[2:]), Indicate(e_lab, color=COL_NO, scale_factor=1.3), run_time=1)
+        self.wait(1.5)
+
+        L6 = line(MathTex(r"\varepsilon", color=COL_NO), fr("étant quelconque,", tsz),
+                  MathTex(r"\ell", color=COL_SUP), fr("est le plus petit des majorants :", tsz, COL_SUP),
+                  MathTex(r"\ell=\sup(A)", color=COL_SUP), y=ys[5])
+        show(*L6[:2], pause=0.3)
+        show(*L6[2:4], pause=0.3)
+        self.play(Write(L6[4]), run_time=1.2)
+        self.wait(1)
+        self.play(FadeOut(VGroup(e_line, e_lab, dn_mark, span, w_ring, w_dot, w_lab)))
 
         sup_lab = MathTex(r"\sup(A)", color=COL_SUP).scale(0.85)
         sup_lab.add_updater(lambda mob: mob.move_to([self.sx(S), AY + 1.6, 0]))
