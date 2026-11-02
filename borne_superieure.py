@@ -23,7 +23,8 @@ COL_SUP = "#f7c948"    # sup(A)
 # ----------------------------------------------------------------- données
 S = 6.4                # sup(A) (non atteint : les points s'accumulent à gauche de S)
 D0, K0 = 3.2, 9.0      # départ : D au milieu de A, K majorant bien au-dessus de sup(A)
-N_STEPS = 14
+N_STEPS = 15
+LAST_ZOOM_STEP = 9     # après cette étape on ne zoome plus : on regarde D et K se rapprocher
 VIEW0 = (-0.5, 10.5)   # fenêtre initiale sur la droite réelle
 X0, X1 = -6.3, 6.3     # étendue de l'axe à l'écran
 AY = -0.35             # ordonnée de l'axe à l'écran
@@ -131,7 +132,9 @@ class BorneSuperieure(Scene):
                            stroke_width=3, stroke_opacity=0.45))
         return g
 
-    def make_marker(self, tracker, name, color):
+    def make_marker(self, tracker, name, color, side=0):
+        """side = -1 (D) / +1 (K) : l'étiquette s'écarte quand D et K sont proches ;
+        side = 0 (M) : l'étiquette monte d'un cran quand D et K sont proches."""
         stem = Line(UP * 0.27, DOWN * 0.27, color=color, stroke_width=5)
         tri = Triangle(fill_color=color, fill_opacity=1, stroke_width=0).scale(0.13).rotate(PI)
         lab = MathTex(name, color=color).scale(0.85)
@@ -139,9 +142,18 @@ class BorneSuperieure(Scene):
 
         def upd(_):
             x = self.sx(tracker.get_value())
+            xd, xk = self.sx(self.d.get_value()), self.sx(self.k.get_value())
+            mid = (xd + xk) / 2
+            lx, ly = x, AY + 0.8
+            if side < 0:
+                lx = min(x, mid - 0.3)
+            elif side > 0:
+                lx = max(x, mid + 0.3)
+            elif xk - xd < 1.4:
+                ly = AY + 1.2
             stem.move_to([x, AY, 0])
             tri.move_to([x, AY + 0.42, 0])
-            lab.move_to([x, AY + 0.8, 0])
+            lab.move_to([lx, ly, 0])
 
         upd(grp)
         grp.add_updater(upd)
@@ -199,7 +211,10 @@ class BorneSuperieure(Scene):
 
         static = self.make_dots()
         self.play(LaggedStart(*[GrowFromCenter(d) for d in static], lag_ratio=0.06), run_time=2.5)
-        self.remove(static)
+        # IMPORTANT : LaggedStart ajoute à la scène un groupe contenant ces points ;
+        # il faut retirer chaque point individuellement, sinon une copie figée
+        # resterait affichée et ne suivrait pas les zooms.
+        self.remove(static, *static)
         self.dots = always_redraw(self.make_dots)
         self.add(self.dots)
 
@@ -217,14 +232,14 @@ class BorneSuperieure(Scene):
 
     # --------------------------------------------------------- D, K, zones
     def present_DK(self):
-        self.K = self.make_marker(self.k, "K", COL_K)
+        self.K = self.make_marker(self.k, "K", COL_K, side=1)
         tK = fr("K : un majorant de A", 32, COL_K).move_to(DOWN * 1.9)
         sK = fr("tout élément de A est inférieur ou égal à K", 24, GREY_B).next_to(tK, DOWN, buff=0.2)
         self.play(FadeIn(self.K, shift=DOWN * 0.4), FadeIn(tK))
         self.play(FadeIn(sK))
         self.wait(1.5)
 
-        self.D = self.make_marker(self.d, "D", COL_D)
+        self.D = self.make_marker(self.d, "D", COL_D, side=-1)
         tD = fr("D : un réel qui n'est pas un majorant de A", 32, COL_D).move_to(DOWN * 1.9)
         sD = fr("au moins un élément de A est strictement plus grand que D", 24, GREY_B) \
             .next_to(tD, DOWN, buff=0.2)
@@ -241,15 +256,30 @@ class BorneSuperieure(Scene):
         self.play(self.zone_op.animate.set_value(1), run_time=1.2)
 
         xd, xk = self.sx(D0), self.sx(K0)
-        zl = fr("pas des majorants", 22, COL_D).move_to([(X0 + xd) / 2, AY + 1.45, 0])
-        zr = fr("majorants", 22, COL_K).move_to([(xk + X1) / 2 + 0.2, AY + 1.45, 0])
-        zm = MathTex(r"\sup(A)\in\,]D,K]", color=COL_M).scale(0.8).move_to([(xd + xk) / 2, AY + 1.45, 0])
-        self.play(LaggedStart(FadeIn(zl), FadeIn(zr), FadeIn(zm), lag_ratio=0.4))
-        why = fr("sup(A) est le plus petit des majorants : il est forcément entre D et K", 24,
-                 GREY_B).move_to(DOWN * 2.0)
-        self.play(FadeIn(why))
+        ya, yl = AY + 1.3, AY + 1.68
+
+        def darrow(a, b, col):
+            return DoubleArrow([a, ya, 0], [b, ya, 0], buff=0, color=col, stroke_width=4,
+                               tip_length=0.18, max_tip_length_to_length_ratio=0.5)
+
+        al = darrow(X0, xd - 0.12, COL_D)
+        am = darrow(xd + 0.12, xk - 0.12, COL_M)
+        ar = darrow(xk + 0.12, X1 + 0.3, COL_K)
+        zl = fr("pas des majorants", 22, COL_D).move_to([(X0 + xd) / 2, yl, 0])
+        zm = fr("on ne sait pas encore", 22, COL_M).move_to([(xd + xk) / 2, yl, 0])
+        zr = fr("majorants", 22, COL_K).move_to([(xk + X1 + 0.3) / 2, yl, 0])
+        self.play(LaggedStart(AnimationGroup(GrowFromCenter(al), FadeIn(zl)),
+                              AnimationGroup(GrowFromCenter(ar), FadeIn(zr)),
+                              AnimationGroup(GrowFromCenter(am), FadeIn(zm)), lag_ratio=0.5),
+                  run_time=2.2)
+        why1 = fr("un réel plus petit que D ne majore pas A", 24, COL_D)
+        why2 = fr("un réel plus grand que K majore A", 24, COL_K)
+        why = VGroup(why1, why2).arrange(DOWN, buff=0.2).move_to(DOWN * 2.1)
+        self.play(FadeIn(why1))
+        self.wait(1)
+        self.play(FadeIn(why2))
         self.wait(2.5)
-        self.play(FadeOut(VGroup(zl, zr, zm, why)))
+        self.play(FadeOut(VGroup(al, am, ar, zl, zm, zr, why)))
 
         # règle de l'algorithme
         r1 = MathTex(r"M=\frac{D+K}{2}", color=COL_M).scale(0.8)
@@ -261,8 +291,9 @@ class BorneSuperieure(Scene):
         box = SurroundingRectangle(rule, color=GREY_B, buff=0.22, corner_radius=0.12, stroke_width=1.5)
         self.rule = VGroup(box, rule)
         head = fr("L'algorithme", 34, COL_TXT, weight=BOLD)
-        big = VGroup(head, self.rule.copy()).arrange(DOWN, buff=0.35).scale(1.25).move_to(DOWN * 2.2)
-        self.play(FadeIn(big, shift=UP * 0.3))
+        big = VGroup(head, self.rule.copy()).arrange(DOWN, buff=0.25).scale(1.08)
+        big.to_edge(UP, buff=0.15)   # au-dessus de la droite des nombres
+        self.play(FadeIn(big, shift=DOWN * 0.3))
         self.wait(3)
         self.rule.move_to(UP * 2.75)
         self.play(FadeOut(big[0]), ReplacementTransform(big[1], self.rule))
@@ -274,17 +305,58 @@ class BorneSuperieure(Scene):
 
     # -------------------------------------------------------------- étapes
     def run_steps(self):
-        for n in range(1, N_STEPS + 1):
+        self.frozen = False
+        for n in range(1, LAST_ZOOM_STEP + 1):
             level = 0 if n <= 3 else (1 if n <= 7 else 2)
             self.do_step(n, level)
-            self.maybe_zoom(level)
-        self.wait(1)
+            if n < LAST_ZOOM_STEP:
+                self.maybe_zoom(level)
+        self.final_zoom()
+
+        # Plus de zoom : on observe D et K se rapprocher, et on note ce que l'on constate.
+        self.frozen = True
+        obs = self.make_observations()
+        for i, n in enumerate(range(LAST_ZOOM_STEP + 1, N_STEPS + 1)):
+            self.do_step(n, 2)
+            if i < len(obs):
+                self.play(FadeIn(obs[i], shift=UP * 0.15), run_time=0.8)
+                self.wait(1.2)
+        self.obs = obs
+        self.wait(1.5)
+
+    def final_zoom(self):
+        d, k = self.d.get_value(), self.k.get_value()
+        c, span = (d + k) / 2, 1.25 * (k - d)
+        lo, hi = self.lo.get_value(), self.hi.get_value()
+        badge = fr(f"zoom ×{(hi - lo) / span:.0f}", 24, GREY_B).next_to(self.slab, DOWN, aligned_edge=LEFT)
+        self.play(FadeIn(badge), run_time=0.3)
+        self.zoom_to(c - span / 2, c + span / 2, run_time=1.5)
+        self.play(FadeOut(badge), run_time=0.3)
+        t = fr("Désormais on ne zoome plus : regardons D et K", 30).move_to(DOWN * 2.0)
+        self.play(FadeIn(t))
+        self.wait(2)
+        self.play(FadeOut(t))
+
+    def make_observations(self):
+        sz = 26
+        o1 = VGroup(MathTex(r"(D_n)", color=COL_D), fr("est croissante", sz)).arrange(RIGHT, buff=0.18)
+        o2 = VGroup(MathTex(r"(K_n)", color=COL_K), fr("est décroissante", sz)).arrange(RIGHT, buff=0.18)
+        o3 = VGroup(MathTex(r"D_n<K_n"), fr("à chaque étape", sz)).arrange(RIGHT, buff=0.18)
+        o4 = VGroup(fr("la distance est divisée par 2 à chaque étape :", sz),
+                    MathTex(r"K_n-D_n=\frac{K_0-D_0}{2^n}\xrightarrow[n\to+\infty]{}0", color=COL_M)
+                    ).arrange(RIGHT, buff=0.2)
+        obs = VGroup(o1, o2, o3, o4)
+        for o in obs:
+            o.scale(0.8)
+        obs.arrange(DOWN, aligned_edge=LEFT, buff=0.15)
+        obs.next_to([0, AY - 0.95, 0], DOWN, buff=0)
+        return obs
 
     def do_step(self, n, level):
         d, k = self.d.get_value(), self.k.get_value()
         m = (d + k) / 2
         is_maj = m >= S
-        rt = [1.0, 0.6, 0.35][level]
+        rt = 0.6 if self.frozen else [1.0, 0.6, 0.35][level]
 
         self.m_tr.set_value(m)
         M = self.make_marker(self.m_tr, "M", COL_M)
@@ -333,7 +405,7 @@ class BorneSuperieure(Scene):
                 self.play(FadeIn(wdot, scale=1.6), Create(ring), FadeIn(v), run_time=rt)
                 self.play(Flash(pw, color=COL_NO, line_length=0.25, flash_radius=0.3), run_time=rt * 0.8)
             else:
-                v = fr("✗", 30, COL_NO).move_to([self.sx(m), AY + 1.25, 0])
+                v = fr("✗", 30, COL_NO).move_to([self.sx(m), AY + 1.65, 0])
                 tmp.add(v)
                 self.play(FadeIn(wdot, scale=1.6), Create(ring), FadeIn(v), run_time=rt)
             if level == 0:
@@ -351,7 +423,7 @@ class BorneSuperieure(Scene):
                 tmp.add(v)
                 self.play(scan.animate.set_fill(COL_K, 0.3), FadeIn(v), run_time=rt)
             else:
-                v = fr("✓", 30, COL_K).move_to([self.sx(m), AY + 1.25, 0])
+                v = fr("✓", 30, COL_K).move_to([self.sx(m), AY + 1.65, 0])
                 tmp.add(v)
                 self.play(scan.animate.set_fill(COL_K, 0.3), FadeIn(v), run_time=rt)
             if level == 0:
@@ -382,52 +454,73 @@ class BorneSuperieure(Scene):
 
     # ---------------------------------------------------------- conclusion
     def conclusion(self):
-        t = fr("D et K se rapprochent indéfiniment…", 30).move_to(DOWN * 2.0)
-        self.play(FadeIn(t))
-        self.wait(1)
+        # 1) Les suites sont adjacentes
+        self.play(FadeOut(self.rule), FadeOut(self.table), FadeOut(self.slab))
+        adj = VGroup(fr("Donc les suites", 30), MathTex(r"(D_n)", color=COL_D), fr("et", 30),
+                     MathTex(r"(K_n)", color=COL_K), fr("sont adjacentes", 30, weight=BOLD)) \
+            .arrange(RIGHT, buff=0.2).move_to(UP * 3.2)
+        lim = VGroup(fr("elles convergent vers une même limite", 28), MathTex(r"\ell", color=COL_SUP)
+                     .scale(1.2)).arrange(RIGHT, buff=0.2).next_to(adj, DOWN, buff=0.3)
+        self.play(FadeIn(adj, shift=DOWN * 0.2))
+        self.wait(1.5)
+        self.play(FadeIn(lim, shift=DOWN * 0.2))
 
+        # 2) Apparition de la limite (pointillés orangés)
         sup_line = always_redraw(lambda: DashedLine(
             [self.sx(S), AY - 0.9, 0], [self.sx(S), AY + 1.2, 0],
             color=COL_SUP, dash_length=0.08, stroke_width=3))
-        sup_lab = MathTex(r"\sup(A)", color=COL_SUP).scale(0.85)
-        sup_lab.add_updater(lambda mob: mob.move_to([self.sx(S), AY + 1.5, 0]))
-        t2 = fr("…et sont toujours de part et d'autre de sup(A)", 30).move_to(DOWN * 2.0)
-        self.play(Create(sup_line), FadeIn(sup_lab), ReplacementTransform(t, t2))
-        self.wait(2)
+        ell = MathTex(r"\ell", color=COL_SUP).scale(1.0)
+        ell.add_updater(lambda mob: mob.move_to([self.sx(S), AY + 1.6, 0]))
+        self.play(Create(sup_line), FadeIn(ell))
+        self.wait(1.5)
 
-        t3 = fr("Dézoomons : D et K se confondent avec sup(A)", 30).move_to(DOWN * 2.0)
-        self.play(ReplacementTransform(t2, t3), FadeOut(self.table), FadeOut(self.rule), FadeOut(self.slab),
-                  FadeOut(self.D[2]), FadeOut(self.K[2]))
+        # 3) Pourquoi cette limite est la borne supérieure
+        self.play(FadeOut(self.obs))
+        p1 = VGroup(MathTex(r"\ell", color=COL_SUP), fr("majore A :", 26),
+                    MathTex(r"\forall a\in A,\ a\le K_n\ \text{pour tout } n"),
+                    MathTex(r"\ \Longrightarrow\ a\le\ell")).arrange(RIGHT, buff=0.18)
+        p2 = VGroup(fr("si", 26), MathTex(r"M'"), fr("majore A :", 26),
+                    MathTex(r"D_n<M'\ \text{pour tout } n"),
+                    MathTex(r"\ \Longrightarrow\ \ell\le M'")).arrange(RIGHT, buff=0.18)
+        p2b = VGroup(fr("(car", 22, GREY_B), MathTex(r"D_n", color=GREY_B),
+                     fr("ne majore pas A : un élément de A dépasse", 22, GREY_B),
+                     MathTex(r"D_n", color=GREY_B), fr("et reste", 22, GREY_B),
+                     MathTex(r"\le M')", color=GREY_B)).arrange(RIGHT, buff=0.12)
+        p3 = VGroup(MathTex(r"\ell", color=COL_SUP), fr("est le plus petit des majorants de A :", 26),
+                    MathTex(r"\ell=\sup(A)", color=COL_SUP)).arrange(RIGHT, buff=0.18)
+        proof = VGroup(p1, p2, p2b, p3)
+        for p in proof:
+            p.scale(0.85)
+        proof.arrange(DOWN, buff=0.2).next_to([0, AY - 0.95, 0], DOWN, buff=0)
+        for p in proof:
+            self.play(FadeIn(p, shift=UP * 0.15), run_time=0.8)
+            self.wait(1.2)
+
+        sup_lab = MathTex(r"\sup(A)", color=COL_SUP).scale(0.85)
+        sup_lab.add_updater(lambda mob: mob.move_to([self.sx(S), AY + 1.6, 0]))
+        self.play(ReplacementTransform(ell, sup_lab))
+        ell.clear_updaters()
+        self.play(Indicate(sup_lab, color=COL_SUP, scale_factor=1.4))
+        self.wait(1)
+
+        # 4) Dézoom : D et K se confondent avec sup(A)
+        # (on rend les étiquettes transparentes plutôt que de les retirer de la scène :
+        #  un FadeOut casserait le groupe du marqueur et donc sa mise à jour au dézoom)
+        self.play(FadeOut(VGroup(adj, lim)), self.D[2].animate.set_opacity(0),
+                  self.K[2].animate.set_opacity(0))
         self.zoom_to(*VIEW0, run_time=4.5)
         self.wait(1)
-        self.play(Indicate(sup_lab, color=COL_SUP, scale_factor=1.4), FadeOut(t3))
 
-        # explications
-        l1 = VGroup(MathTex(r"K_n", color=COL_K), fr("majore A", 26),
-                    MathTex(r"\Longrightarrow\ \sup(A)\le K_n")).arrange(RIGHT, buff=0.2)
-        l2 = VGroup(MathTex(r"D_n", color=COL_D), fr("ne majore pas A", 26),
-                    MathTex(r"\Longrightarrow\ D_n<\sup(A)")).arrange(RIGHT, buff=0.2)
-        l3 = MathTex(r"K_n-D_n=\frac{K_0-D_0}{2^n}\xrightarrow[n\to+\infty]{}0")
-        expl = VGroup(l1, l2, l3).scale(0.75).arrange(DOWN, buff=0.22).move_to(DOWN * 2.55)
-        for line in expl:
-            self.play(FadeIn(line, shift=UP * 0.2), run_time=0.8)
-            self.wait(0.8)
-
-        adj = VGroup(MathTex(r"(D_n)\ \text{croissante},\ (K_n)\ \text{d\'ecroissante}"),
-                     fr(": suites adjacentes", 26)).arrange(RIGHT, buff=0.2).scale(0.8).move_to(UP * 2.0)
         res = MathTex(r"\lim_{n\to+\infty}D_n=\lim_{n\to+\infty}K_n=\sup(A)", color=COL_SUP).scale(1.05)
-        res.move_to(UP * 3.15)
+        res.move_to(UP * 2.6)
         box = SurroundingRectangle(res, color=COL_SUP, buff=0.22, corner_radius=0.12)
-        self.play(FadeIn(adj))
-        self.wait(1)
         self.play(Write(res), Create(box), run_time=2)
         self.play(Circumscribe(VGroup(res, box), color=COL_SUP, fade_out=True))
         self.wait(1.5)
 
         rem = fr("Remarque : ici sup(A) ∉ A, ce n'est pas un maximum.", 22, GREY_B)
-        rem.to_edge(DOWN, buff=0.15)
-        expl_shift = expl.copy().shift(UP * 0.2)
-        self.play(Transform(expl, expl_shift), FadeIn(rem))
+        rem.next_to(box, DOWN, buff=0.15)
+        self.play(FadeIn(rem))
         self.wait(4)
         self.play(*[FadeOut(mob) for mob in self.mobjects if isinstance(mob, VMobject)])
         self.wait(0.5)
