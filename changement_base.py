@@ -65,8 +65,9 @@ class ChangementBase(Scene):
                                  group_with_commas=False)
 
         def set_x_value(m, value):
-            # values below 1 get a third decimal so that 0.001 stays readable
-            m.num_decimal_places = 3 if abs(value) < 1 else 2
+            # two decimals, like every other value; only values below 0.1 get a third one,
+            # so that 0.001 stays readable
+            m.num_decimal_places = 3 if 0 < abs(value) < 0.0995 else 2   # 0.1 itself shows "0.10"
             m.set_value(value)
 
         def dotted(x_start, x_end, y):
@@ -168,10 +169,11 @@ class ChangementBase(Scene):
             for i, num in enumerate(bot_numbers):
                 if i < n_numbers:
                     value = round(i * step, 6)
-                    if shown[i] != (value, decimals):
-                        num.num_decimal_places = decimals
+                    places = 0 if value == 0 else decimals     # 0 is written "0", not "0.000"
+                    if shown[i] != (value, places):
+                        num.num_decimal_places = places
                         num.set_value(value)
-                        shown[i] = (value, decimals)
+                        shown[i] = (value, places)
                     num.next_to(np.array([x0 + value * u, bot_y, 0]), DOWN, buff=0.25).set_opacity(1)
                 else:
                     num.set_opacity(0)

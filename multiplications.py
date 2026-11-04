@@ -46,9 +46,9 @@ def colored_tex(*parts, font_size=40):
     return tex
 
 
-def decimal_fr(value):
-    """2.5 -> "2{,}50": two decimals with a French decimal comma, for MathTex."""
-    return f"{value:.2f}".replace(".", "{,}")
+def decimal_text(value):
+    """2.5 -> "2.50": two decimals, for MathTex."""
+    return f"{value:.2f}"
 
 
 class Multiplications(Scene):
@@ -258,14 +258,14 @@ class Multiplications(Scene):
         self.play(Wiggle(top_label), Wiggle(bot_label))
 
         def power_formula(c, text=None):
-            # ln(D^c) = c Δt, with c written with a decimal comma
-            text = text or decimal_fr(c)
+            # ln(D^c) = c Δt, with c written with two decimals
+            text = text or decimal_text(c)
             return colored_tex((r"\ln(", W), ("D^{" + text + "}", bot_color), (")", W), ("=", W),
                                (text + r"\,\Delta t", top_color))
 
         # The box is sized for the widest content it will hold ("3,00")
         layout = VGroup(general.copy(), power_formula(3)).arrange(RIGHT, buff=0.8).move_to(eq_center)
-        power = power_formula(0.5, "0{,}5").move_to(layout[1]).align_to(layout[1], LEFT)
+        power = power_formula(0.5, "0.5").move_to(layout[1]).align_to(layout[1], LEFT)
         self.play(general.animate.move_to(layout[0]),
                   Transform(box, SurroundingRectangle(layout, color=WHITE, buff=0.25, corner_radius=0.1)),
                   Write(power))

@@ -360,6 +360,49 @@ class Inversion(MovingCameraScene):
         exp_name_on_graph = draw_graph(exp_graph, "e^{y}", exp_color,
                                        lambda axes: axes.c2p(1.6, np.exp(1.6)) + LEFT * 2.0)
 
+        # ---- 5) Both curves on the same axes: mirror images of each other across y = x ----
+        # The axes become square (same range and same unit on both), so that the reflection
+        # across y = x is a true symmetry of the picture
+        axes, labels, balls, dashes, dot, trace = exp_graph
+        trace.clear_updaters()
+        sym_axes = Axes(x_range=[-4, 8, 1], y_range=[-4, 8, 1], x_length=12.5, y_length=12.5,
+                        axis_config={"color": GREY_B, "stroke_width": 4, "include_numbers": True,
+                                     "font_size": 40, "tip_width": 0.4, "tip_height": 0.4},
+                        ).move_to(np.array([14.6, 0, 0]))
+        sym_labels = VGroup(MathTex("x", font_size=64).next_to(sym_axes.x_axis.get_end(), DOWN, buff=0.35),
+                            MathTex("y", font_size=64).next_to(sym_axes.y_axis.get_end(), RIGHT, buff=0.35))
+        exp_curve = sym_axes.plot(np.exp, x_range=[-4, np.log(8)], color=exp_color, stroke_width=7)
+        # the two names sit at mirror positions: (3, 6.5) and (6.5, 3)
+        exp_name_sym = MathTex("e^{x}", color=exp_color, font_size=96).move_to(sym_axes.c2p(3, 6.5))
+        ln_name_sym = MathTex(r"\ln(x)", color=ln_color, font_size=96).move_to(sym_axes.c2p(6.5, 3))
+        self.play(FadeOut(balls), FadeOut(dashes), FadeOut(dot), FadeOut(labels), run_time=1)
+        self.play(Transform(axes, sym_axes), Transform(trace, exp_curve),
+                  Transform(exp_name_on_graph, exp_name_sym), FadeIn(sym_labels), run_time=2.5)
+
+        diagonal = DashedLine(sym_axes.c2p(-4, -4), sym_axes.c2p(8, 8), dash_length=0.25, color=WHITE,
+                              stroke_width=4)
+        diagonal_name = MathTex("y = x", font_size=72).next_to(sym_axes.c2p(6.6, 6.6), UP + LEFT, buff=0.15)
+        self.play(Create(diagonal), Write(diagonal_name), run_time=1.5)
+        self.wait(0.5)
+
+        # A copy of the exponential flips over the line y = x and lands on the logarithm
+        mirror = exp_curve.copy()
+        self.add(mirror)
+        self.play(Rotate(mirror, PI, axis=np.array([1, 1, 0]), about_point=sym_axes.c2p(0, 0)),
+                  run_time=3, rate_func=smooth)
+        self.play(mirror.animate.set_color(ln_color), Write(ln_name_sym), run_time=1.5)
+
+        # Pairs of mirror points (a, e^a) and (e^a, a), joined across y = x
+        pairs = VGroup()
+        for a in [-1, 0, 1, 1.8]:
+            p, q = sym_axes.c2p(a, np.exp(a)), sym_axes.c2p(np.exp(a), a)
+            pairs.add(VGroup(DashedLine(p, q, dash_length=0.15, color=GREY_A, stroke_width=3),
+                             Dot(p, color=exp_color, radius=0.13), Dot(q, color=ln_color, radius=0.13)))
+        self.play(LaggedStart(*[Create(pair) for pair in pairs], lag_ratio=0.4), run_time=2.5)
+        self.play(Indicate(exp_name_on_graph, color=exp_color), Indicate(ln_name_sym, color=ln_color))
+        self.wait(3)
+
         # Back to the layout of the start: the video ends there
-        zoom_in(*[FadeOut(m) for m in exp_graph], FadeOut(exp_name_on_graph))
+        zoom_in(*[FadeOut(m) for m in [axes, trace, exp_name_on_graph, sym_labels, diagonal, diagonal_name,
+                                       mirror, ln_name_sym, pairs]])
         self.wait(2)
