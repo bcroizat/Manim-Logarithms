@@ -52,6 +52,11 @@ def decimal_fr(value):
 
 
 class Multiplications(Scene):
+    pause_factor = 2            # every pause (self.wait) lasts this many times longer
+
+    def wait(self, duration=1.0, *args, **kwargs):
+        super().wait(duration * self.pause_factor, *args, **kwargs)
+
     def construct(self):
         r = 0.4                     # ball radius
         r_small = 0.28              # radius of the second, smaller balls
@@ -231,7 +236,8 @@ class Multiplications(Scene):
                   *[FadeOut(a) for a in top_arrows + bot_arrows], run_time=1.5)
 
         general = colored_tex((r"\ln(", W), ("D^{n}", bot_color), (")", W), ("=", W), (r"n\ln(", W),
-                              ("D", bot_color), (")", W), ("=", W), (r"n\,\Delta t", top_color)).move_to(eq_center)
+                              ("D", bot_color), (")", W), ("=", W), (r"n\,\Delta t", top_color),
+                              (r"\quad n \in \mathbb{N}", W)).move_to(eq_center)
         self.play(ReplacementTransform(VGroup(*formulas), general),
                   Transform(box, SurroundingRectangle(general, color=WHITE, buff=0.25, corner_radius=0.1)),
                   run_time=1.5)
@@ -280,8 +286,10 @@ class Multiplications(Scene):
         self.wait(1)
 
         alpha = colored_tex((r"\ln(", W), (r"D^{\alpha}", bot_color), (")", W), ("=", W), (r"\alpha\ln(", W),
-                            ("D", bot_color), (")", W), ("=", W), (r"\alpha\,\Delta t", top_color)).move_to(general)
+                            ("D", bot_color), (")", W), ("=", W), (r"\alpha\,\Delta t", top_color),
+                            (r"\quad \alpha \in \mathbb{R}", W)).move_to(general)
         self.play(ReplacementTransform(general, alpha), run_time=1.5)
+        self.play(Indicate(alpha[9], color=YELLOW))         # n ∈ N has become α ∈ R
         self.play(Circumscribe(alpha, color=YELLOW))
         alpha_target = alpha.copy().move_to(eq_center)
         self.play(FadeOut(power), FadeOut(top_arrow), FadeOut(bot_arrow),
@@ -353,13 +361,21 @@ class Multiplications(Scene):
         self.play(A.animate.set_value(5), run_time=2.5, rate_func=smooth)
         self.play(A.animate.set_value(2), run_time=1.8, rate_func=smooth)
 
-        # ---- 8) The highlight: ln(A × D) = ln(A) + ln(D) ----
+        # ---- 8) The highlight: ln(A × D) = ln(A) + Δt, then Δt becomes ln(D) ----
+        first = colored_tex((r"\ln(", W), ("A", a_color), (r"\times", W), ("D", bot_color), (")", W), ("=", W),
+                            (r"\ln(", W), ("A", a_color), (")", W), ("+", W),
+                            (r"\Delta t", top_color), font_size=52).move_to(eq_center)
         prop = colored_tex((r"\ln(", W), ("A", a_color), (r"\times", W), ("D", bot_color), (")", W), ("=", W),
                            (r"\ln(", W), ("A", a_color), (")", W), ("+", W),
                            (r"\ln(", W), ("D", bot_color), (")", W), font_size=52).move_to(eq_center)
         self.play(FadeOut(alpha, shift=UP * 0.3),
-                  Transform(box, SurroundingRectangle(prop, color=WHITE, buff=0.3, corner_radius=0.1)))
-        self.play(Write(prop), run_time=2.5)
+                  Transform(box, SurroundingRectangle(first, color=WHITE, buff=0.3, corner_radius=0.1)))
+        self.play(Write(first), run_time=2.5)
+        self.play(Indicate(first[10], color=top_color))
+        self.wait(1)
+        self.play(ReplacementTransform(first[:10], prop[:10]), ReplacementTransform(first[10], prop[10:]),
+                  Transform(box, SurroundingRectangle(prop, color=WHITE, buff=0.3, corner_radius=0.1)),
+                  run_time=1.5)
         self.play(Circumscribe(prop, color=YELLOW, fade_out=True), run_time=1.5)
         self.play(Indicate(prop[1], color=a_color), Indicate(prop[3], color=bot_color),
                   Indicate(prop[7], color=a_color), Indicate(prop[11], color=bot_color))
