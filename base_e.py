@@ -39,6 +39,11 @@ def beach_ball(c, r, colors):
 
 
 class BaseE(Scene):
+    pause_factor = 2            # every pause (self.wait) lasts this many times longer
+
+    def wait(self, duration=1.0, *args, **kwargs):
+        super().wait(duration * self.pause_factor, *args, **kwargs)
+
     def construct(self):
         r = 0.4                     # ball radius
         slow_motion = 3             # seconds of video per unit of t
@@ -257,6 +262,9 @@ class BaseE(Scene):
         x_read.clear_updaters()     # a value cannot keep updating while it is being transformed
         self.play(ReplacementTransform(x_read, x_bold))
         self.play(Circumscribe(x_bold, color=YELLOW))
+        x_approx = MathTex(r"x \approx \mathbf{2.72}", color=bot_color, font_size=40).move_to(x_bold)
+        self.play(ReplacementTransform(x_bold, x_approx))
+        x_bold = x_approx
         x_full = MathTex(r"x = 2.7182818\ldots", color=bot_color, font_size=36).next_to(x_bold, DOWN, buff=0.2)
         self.play(Write(x_full), run_time=2)
         self.wait(0.5)
@@ -389,6 +397,16 @@ class BaseE(Scene):
         self.wait(1)
 
         roll_to(-7, speed=2.5)
+        quantifier = MathTex(r"\forall x \in \mathbb{R}", font_size=42)
+        top_row = VGroup(general.copy(), quantifier.copy()).arrange(RIGHT, buff=0.35)
+        column = VGroup(top_row, live_negative.copy()).arrange(DOWN, buff=0.2)
+        quantified_layout = VGroup(column, e_text.copy()).arrange(RIGHT, buff=0.8).move_to(DOWN * 0.1)
+        quantifier.move_to(top_row[1])
+        self.play(general.animate.move_to(top_row[0]), live_anchor.animate.move_to(column[1].get_center()),
+                  e_text.animate.move_to(quantified_layout[1]),
+                  Transform(box, frame_box(quantified_layout, buff=0.2)), run_time=1)
+        self.play(Write(quantifier))
+        self.play(Circumscribe(quantifier, color=YELLOW), Indicate(quantifier, color=YELLOW))
         self.wait(1.5)
         roll_to(1, speed=2.5)
         self.wait(0.5)
