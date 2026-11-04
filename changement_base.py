@@ -39,6 +39,11 @@ def beach_ball(c, r, colors):
 
 
 class ChangementBase(Scene):
+    pause_factor = 2            # every pause (self.wait) lasts this many times longer
+
+    def wait(self, duration=1.0, *args, **kwargs):
+        super().wait(duration * self.pause_factor, *args, **kwargs)
+
     def construct(self):
         r = 0.4                     # ball radius
         slow_motion = 3             # seconds of video per unit of t
@@ -326,7 +331,7 @@ class ChangementBase(Scene):
         self.play(Circumscribe(x_read, color=YELLOW), x_read.animate.scale(1.3), run_time=1.5)
         self.play(x_read.animate.scale(1 / 1.3))
 
-        eq_center = np.array([1.35, -0.15, 0])
+        eq_center = np.array([1.35, -0.2, 0])
 
         def colored_tex(*parts, font_size=40):
             tex = MathTex(*[p for p, _ in parts], font_size=font_size)
@@ -334,16 +339,40 @@ class ChangementBase(Scene):
                 sub.set_color(color)
             return tex
 
+        base_color = ORANGE         # colour of the base (2, then 10) wherever it is written
+
+        def color_log_base(tex, b):
+            # in "\log_{b}(" the glyphs are l, o, g, then the digits of b
+            tex[3:3 + len(b)].set_color(base_color)
+            return tex
+
         def base_formulas(b):
-            title = MathTex(r"\text{base } " + b + r"\,:", font_size=40)
+            title = colored_tex((r"\text{base }", WHITE), (b, base_color), (r"\,:", WHITE))
             generic = colored_tex((r"\log_{" + b + "}(", WHITE), ("x", bot_color), (")", WHITE), ("=", WHITE),
                                   ("y", top_color))
+            color_log_base(generic[0], b)
             arrow = MathTex(r"\longrightarrow", font_size=40)
             return title, generic, arrow
 
         def live_formula(b, x_value, y_value):
-            return VGroup(MathTex(r"\log_{" + b + "}(", font_size=40), number(x_value, bot_color, 40),
+            return VGroup(color_log_base(MathTex(r"\log_{" + b + "}(", font_size=40)[0], b),
+                          number(x_value, bot_color, 40),
                           MathTex(")", font_size=40), MathTex("=", font_size=40), number(y_value, top_color, 40))
+
+        # Above the scrolling values: b^y = x, which later becomes log_b(b^y) = y
+        def power_equality(b):
+            return colored_tex((b, base_color), ("^{y}", top_color), ("=", WHITE), ("x", bot_color), font_size=36)
+
+        def log_of_power(b):
+            tex = colored_tex((r"\log_{" + b + "}(", WHITE), (b, base_color), ("^{y}", top_color), (")", WHITE),
+                              ("=", WHITE), ("y", top_color), font_size=36)
+            color_log_base(tex[0], b)
+            return tex
+
+        link_slot = VectorizedPoint()   # inside the box, just above the scrolling values
+
+        def above_live(mob):
+            return mob.move_to(link_slot.get_center())
 
         def arrange_live(m):
             m.arrange(RIGHT, buff=0.08)
@@ -351,10 +380,15 @@ class ChangementBase(Scene):
             m[4].shift(RIGHT * 0.12)
 
         def make_layout(b):
+            # title, generic formula and arrow on the row of the scrolling values; the row above
+            # those values is kept for b^y = x / log_b(b^y) = y
             title, generic, arrow = base_formulas(b)
             widest = live_formula(b, 1000, -3)
             arrange_live(widest)
-            layout = VGroup(title, generic, arrow, widest).arrange(RIGHT, buff=0.3).move_to(eq_center)
+            column = VGroup(log_of_power(b), widest).arrange(DOWN, buff=0.15)
+            layout = VGroup(title, generic, arrow, column).arrange(RIGHT, buff=0.3).move_to(eq_center)
+            for m in (title, generic, arrow):
+                m.set_y(widest.get_y())
             return layout
 
         live_anchor = VectorizedPoint()
@@ -369,11 +403,12 @@ class ChangementBase(Scene):
         title, generic, to_live = base_formulas("2")
         for mob, slot in zip([title, generic, to_live], layout):
             mob.move_to(slot)
-        live_anchor.move_to(layout[3])
+        live_anchor.move_to(layout[3][1])
+        link_slot.move_to(layout[3][0])
         self.add(live_anchor)
         live = live_formula("2", 2, 1)
         update_live(live)
-        eq_box = SurroundingRectangle(layout, color=WHITE, buff=0.25, corner_radius=0.1)
+        eq_box = SurroundingRectangle(layout, color=WHITE, buff=0.2, corner_radius=0.1)
         self.play(Create(eq_box), Write(title), run_time=1.2)
         self.play(Write(generic))
         self.play(Write(to_live), FadeIn(live, shift=LEFT * 0.3))
@@ -382,12 +417,19 @@ class ChangementBase(Scene):
         self.wait(0.5)
 
         # The balls move on: stops (with wiggles) at y = 2 and y = 3, then back to the start
+        link = above_live(power_equality("2"))
+        self.play(Write(link))
         for y_stop in [2, 3]:
             roll_to(y_stop)
-            wiggle_values(y_read, x_read, live)
+            wiggle_values(y_read, x_read, live, link)
             self.wait(0.5)
         roll_to(0)
         self.wait(0.5)
+        # 2^y = x becomes log_2(2^y) = y, then a pause before changing the speed (and the base)
+        conclusion = above_live(log_of_power("2"))
+        self.play(ReplacementTransform(link, conclusion), run_time=1.5)
+        self.play(Circumscribe(conclusion, color=YELLOW))
+        self.wait(1.5)
 
         # ---- 4) Base 10: k becomes ln(10) ----
         self.play(Circumscribe(vel_box, color=YELLOW), FadeOut(k_note))
@@ -401,18 +443,21 @@ class ChangementBase(Scene):
             mob.move_to(slot)
         live.clear_updaters()
         live10 = live_formula("10", 1, 0)
-        self.play(live_anchor.animate.move_to(layout10[3]), run_time=0.01)
+        self.play(live_anchor.animate.move_to(layout10[3][1]), link_slot.animate.move_to(layout10[3][0]),
+                  run_time=0.01)
         update_live(live10)
         self.play(ReplacementTransform(title, title10), ReplacementTransform(generic, generic10),
-                  to_live.animate.move_to(layout10[2]), ReplacementTransform(live, live10),
-                  Transform(eq_box, SurroundingRectangle(layout10, color=WHITE, buff=0.25, corner_radius=0.1)),
+                  to_live.animate.move_to(layout10[2]), ReplacementTransform(live, live10), FadeOut(conclusion),
+                  Transform(eq_box, SurroundingRectangle(layout10, color=WHITE, buff=0.2, corner_radius=0.1)),
                   run_time=2)
         live10.add_updater(update_live)
         self.play(Circumscribe(VGroup(title10, generic10), color=YELLOW))
+        link = above_live(power_equality("10"))
+        self.play(Write(link))
 
         roll_to(1)
         self.play(Circumscribe(x_read, color=YELLOW))
-        wiggle_values(y_read, x_read, live10)
+        wiggle_values(y_read, x_read, live10, link)
         self.wait(0.5)
         roll_to(0)
         self.wait(0.5)
@@ -423,7 +468,7 @@ class ChangementBase(Scene):
         # going down the red axis zooms in between 0 and 1: x = 0.1, 0.01, 0.001
         for y_stop in [-1, -2, -3]:
             roll_to(y_stop)
-            wiggle_values(y_read, x_read, live10)
+            wiggle_values(y_read, x_read, live10, link)
             self.wait(0.5)
         roll_to(0)                                  # no stops on the way back
         self.wait(1)
@@ -431,6 +476,10 @@ class ChangementBase(Scene):
         # ---- 6) Towards 1000: the red axis zooms out (as in RollingBall8) ----
         for y_stop in [2, 3]:
             roll_to(y_stop)
-            wiggle_values(y_read, x_read, live10)
+            wiggle_values(y_read, x_read, live10, link)
             self.wait(0.5)
+        # To conclude: 10^y = x becomes log_10(10^y) = y
+        conclusion = above_live(log_of_power("10"))
+        self.play(ReplacementTransform(link, conclusion), run_time=1.5)
+        self.play(Circumscribe(conclusion, color=YELLOW))
         self.wait(3)

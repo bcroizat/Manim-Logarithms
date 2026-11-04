@@ -39,6 +39,11 @@ def beach_ball(c, r, colors):
 
 
 class Inversion(MovingCameraScene):
+    pause_factor = 2            # every pause (self.wait) lasts this many times longer
+
+    def wait(self, duration=1.0, *args, **kwargs):
+        super().wait(duration * self.pause_factor, *args, **kwargs)
+
     def construct(self):
         r = 0.4                     # ball radius
         slow_motion = 3             # seconds of video per unit of t
@@ -270,7 +275,9 @@ class Inversion(MovingCameraScene):
             trace = TracedPath(dot.get_center, stroke_color=curve_color, stroke_width=7)
             return axes, labels, VGroup(h_ball, v_ball), VGroup(h_dash, v_dash), dot, trace
 
-        def draw_graph(parts):
+        def draw_graph(parts, curve_name, curve_color, name_place):
+            """Draws the graph, then writes the curve's name (in its colour) at name_place(axes).
+            Returns the name so that it can disappear with the graph."""
             axes, labels, balls, dashes, dot, trace = parts
             self.play(Create(axes), Write(labels), run_time=2)
             self.play(FadeIn(balls, scale=0.3))
@@ -279,13 +286,18 @@ class Inversion(MovingCameraScene):
             for target in [np.log(12), -4, 0]:
                 self.play(t.animate(rate_func=smooth).set_value(target),
                           run_time=abs(target - t.get_value()) * graph_speed)
+            name = MathTex(curve_name, color=curve_color, font_size=96).move_to(name_place(axes))
+            self.play(Write(name), run_time=1.5)
+            self.play(Circumscribe(name, color=curve_color), Indicate(name, color=curve_color))
             self.wait(4)                             # long pause on the finished graph
+            return name
 
         zoom_out()
         ln_graph = graph_scene([0, 12.5, 1], [-4, 3, 1], "x", bot_color, "y", top_color,
                                np.exp, lambda s: s, (bot_color, WHITE), (top_color, YELLOW), ln_color)
-        draw_graph(ln_graph)
-        zoom_in(*[FadeOut(m) for m in ln_graph])
+        ln_name = draw_graph(ln_graph, r"\ln(x)", ln_color,
+                             lambda axes: axes.c2p(8.5, np.log(8.5)) + UP * 1.3 + LEFT * 0.6)
+        zoom_in(*[FadeOut(m) for m in ln_graph], FadeOut(ln_name))
         self.wait(1)
 
         # ---- 3) The arrow comes back and turns round: x = e^y ----
@@ -345,8 +357,9 @@ class Inversion(MovingCameraScene):
         zoom_out()
         exp_graph = graph_scene([-4, 2.6, 1], [0, 12.5, 1], "y", top_color, "x", bot_color,
                                 lambda s: s, np.exp, (top_color, YELLOW), (bot_color, WHITE), exp_color)
-        draw_graph(exp_graph)
+        exp_name_on_graph = draw_graph(exp_graph, "e^{y}", exp_color,
+                                       lambda axes: axes.c2p(1.6, np.exp(1.6)) + LEFT * 2.0)
 
         # Back to the layout of the start: the video ends there
-        zoom_in(*[FadeOut(m) for m in exp_graph])
+        zoom_in(*[FadeOut(m) for m in exp_graph], FadeOut(exp_name_on_graph))
         self.wait(2)
