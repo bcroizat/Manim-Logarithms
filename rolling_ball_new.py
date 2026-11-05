@@ -320,12 +320,15 @@ class RollingBall5(Scene):
     show_top = True
     show_bot = True
     t_end = 7                   # the animation runs until t = t_end (the red ball rolls off screen)
+    slow_motion = 2             # 1 = normal speed, 2 = twice as slow, 3 = three times as slow...
+    finale = False              # True: quick rewind to t = 0, then a run without stops while the
+    finale_x = 1000             # red axis zooms out, until the red ball reaches finale_x
 
     def construct(self):
         r = 0.4                     # ball radius
         x_stops = [3, 7.389, 10]    # pause when the bottom ball reaches these graduations
         pause = 3.5                 # seconds of each pause
-        slow_motion = 2             # 1 = normal speed, 2 = twice as slow, 3 = three times as slow...
+        slow_motion = self.slow_motion
         top_color, bot_color = BLUE, RED
 
         # Two graduated axes from 0 (1 graduation = 1 scene unit), each ending in a dotted line
@@ -362,37 +365,54 @@ class RollingBall5(Scene):
 
         t = ValueTracker(0)
 
-        def rolling(axis, spin, position):
-            # Positions come from the exact formula, so there is no accumulated drift
-            state = {"x": position(0)}
+        # Screen units per graduation on the red axis: 1, except during the finale where, beyond
+        # x_zoom, the axis zooms out so that the red ball stays at the screen position of x_zoom
+        x_zoom = 11
+        zoom = {"on": False}
+
+        def bot_unit():
+            x = bot_pos(t.get_value())
+            return x_zoom / x if zoom["on"] and x > x_zoom else 1
+
+        def top_point(v):
+            return top_axis.n2p(v)
+
+        def bot_point(v):
+            return bot_axis.n2p(0) + RIGHT * v * bot_unit()
+
+        def rolling(to_point, spin, position, unit=lambda: 1):
+            # Positions come from the exact formula, so there is no accumulated drift; the ball
+            # turns by the distance rolled at the current scale (rolling without slipping)
+            state = {"x": position(0), "screen": to_point(position(0))[0]}
 
             def roll(mob, dt):
                 x = position(t.get_value())
-                dx = x - state["x"]
-                state["x"] = x
-                mob.shift(RIGHT * dx)
-                spin.rotate(-dx / r, about_point=axis.n2p(x) + UP * r)   # rolling without slipping
+                screen = to_point(x)[0]
+                mob.shift(RIGHT * (screen - state["screen"]))
+                spin.rotate(-(x - state["x"]) * unit() / r, about_point=spin.get_center())
+                state["x"], state["screen"] = x, screen
             return roll
 
-        top_ball.add_updater(rolling(top_axis, top_spin, top_pos))
-        bot_ball.add_updater(rolling(bot_axis, bot_spin, bot_pos))
+        top_ball.add_updater(rolling(top_point, top_spin, top_pos))
+        bot_ball.add_updater(rolling(bot_point, bot_spin, bot_pos, bot_unit))
 
         # Arrow under each ball, its tip just below the axis, with the current position
         # and the current velocity written under it. The arrow leans to the right
         # so it doesn't cover the axis number under the ball
-        def position_marker(axis, position, velocity, name, color):
+        def position_marker(axis, to_point, position, velocity, name, color):
             arrow = Arrow(RIGHT * 0.7 + DOWN * 0.84, ORIGIN, buff=0, color=color, stroke_width=4,
                           max_tip_length_to_length_ratio=0.1)
 
             def readout(symbol):
                 return VGroup(MathTex(symbol + " =", color=color, font_size=34),
-                              DecimalNumber(0, num_decimal_places=2, color=color, font_size=34))
+                              DecimalNumber(0, num_decimal_places=2, color=color, font_size=34,
+                                            group_with_commas=False))
 
             pos_readout, vel_readout = readout(name), readout("v")
 
             def follow(mob):
                 s = t.get_value()
-                arrow.shift(axis.n2p(position(s)) + DOWN * 0.08 - arrow.get_end())
+                arrow.shift(to_point(position(s)) + DOWN * 0.08 - arrow.get_end())
                 pos_readout[1].set_value(position(s))
                 vel_readout[1].set_value(velocity(s))
                 pos_readout.arrange(RIGHT, buff=0.15).next_to(arrow.get_start(), DOWN, buff=0.1)
@@ -410,8 +430,10 @@ class RollingBall5(Scene):
             marker.add_updater(follow)
             return marker, pos_readout, vel_readout
 
-        top_marker, top_readout, top_vel_readout = position_marker(top_axis, top_pos, lambda s: 1, "y", top_color)
-        bot_marker, bot_readout, bot_vel_readout = position_marker(bot_axis, bot_pos, np.exp, "x", bot_color)
+        top_marker, top_readout, top_vel_readout = position_marker(top_axis, top_point, top_pos, lambda s: 1,
+                                                                   "y", top_color)
+        bot_marker, bot_readout, bot_vel_readout = position_marker(bot_axis, bot_point, bot_pos, np.exp,
+                                                                   "x", bot_color)
 
         # 1) Time box in the upper left corner (t = y, the top ball's position)
         t_display = VGroup(MathTex("t =", font_size=40), DecimalNumber(0, num_decimal_places=2, font_size=40))
@@ -447,13 +469,68 @@ class RollingBall5(Scene):
                     self.wait(1)
                 self.wait(pause - 2)
 
+        if self.finale and self.show_bot:
+            # Quick rewind to the start
+            self.play(t.animate.set_value(0), run_time=2, rate_func=smooth)
+
+            # The red axis' graduations are swapped for zoomable ones (identical at scale 1):
+            # a fixed set of ticks and numbers, renumbered every 1, 2, 5, 10, ... graduations
+            steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+            minor_steps = {1: None, 2: 1, 5: 1, 10: 2, 20: 10, 50: 10, 100: 20, 200: 100, 500: 100, 1000: 200}
+            min_gap = 0.75                  # minimum screen distance between two numbers
+            ticks = VGroup(*[Line(DOWN * 0.1, UP * 0.1, color=GREY_B, stroke_width=2)
+                             for _ in range(int(12 / (min_gap / 5)) + 2)])
+            numbers = VGroup(*[Integer(0, font_size=26, group_with_commas=False)
+                               for _ in range(int(12 / min_gap) + 2)])
+            shown = [None] * len(numbers)
+
+            def draw_graduations(group):
+                u = bot_unit()
+                step = next(n for n in steps if n * u >= min_gap)
+                minor = minor_steps[step] or step
+                last = 12 / u + 1e-9                    # end of the solid line
+                tick_values = np.arange(0, last, minor)
+                for tick, v in zip(ticks, tick_values):
+                    p = bot_point(v)
+                    h = 0.1 if v % step == 0 else 0.05
+                    tick.put_start_and_end_on(p + DOWN * h, p + UP * h).set_stroke(opacity=1)
+                for tick in ticks[len(tick_values):]:
+                    tick.set_stroke(opacity=0)
+                number_values = np.arange(0, last, step)
+                for i, num in enumerate(numbers):
+                    if i < len(number_values):
+                        v = int(number_values[i])
+                        if shown[i] != v:
+                            num.set_value(v)
+                            shown[i] = v
+                        num.next_to(bot_point(v), DOWN, buff=0.25).set_opacity(1)
+                    else:
+                        num.set_opacity(0)
+
+            graduations = VGroup(ticks, numbers)
+            draw_graduations(graduations)
+            graduations.add_updater(draw_graduations)
+            line = Line(bot_axis.n2p(0), bot_axis.n2p(12), color=GREY_B, stroke_width=2)
+            self.remove(bot_axis)
+            self.add(line, graduations)
+            self.bring_to_front(p_dot, p_label, stars[1], bot_ball, bot_marker)
+            stars[1].add_updater(lambda m: m.move_to(bot_point(1)))
+            zoom["on"] = True
+
+            # Off again, without stops, until the red ball reaches finale_x
+            t_final = np.log(self.finale_x)
+            self.play(t.animate.set_value(t_final), run_time=t_final * slow_motion, rate_func=linear)
+
         self.wait(1.5)
 
 
 class RollingBall5Bottom(RollingBall5):
-    # Only the bottom axis and the red ball (v = x)
+    # Only the bottom axis and the red ball (v = x), a little slower: first up to t = 3
+    # (with the usual stops), then a quick rewind and a run up to x = 1000 with a zoom-out
     show_top = False
-    t_end = 7          # stops when the (hidden) red ball would reach 12
+    t_end = 3
+    slow_motion = 2.5
+    finale = True
 
 
 class RollingBall5Top(RollingBall5):
