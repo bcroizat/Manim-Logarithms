@@ -192,7 +192,7 @@ class ChangementBase(Scene):
 
         def place_e(m):
             e_tick.move_to(np.array([bot_screen(e), bot_y, 0])).set_stroke(opacity=1 if on_bot_axis(e) else 0)
-            e_label.next_to(e_tick, DOWN, buff=0.45).set_opacity(1 if on_bot_axis(e) else 0)
+            e_label.next_to(e_tick, DOWN, buff=0.3).set_opacity(1 if on_bot_axis(e) else 0)
 
         e_mark = VGroup(e_tick, e_label)
         place_e(e_mark)
@@ -310,7 +310,7 @@ class ChangementBase(Scene):
         update_vel_live(vel_live)
         vel_box = SurroundingRectangle(vel_live, color=bot_color, buff=0.25, corner_radius=0.1)
         self.play(Create(vel_box), Write(vel_plain))
-        self.wait(1)
+        self.wait(1.2)
         self.play(ReplacementTransform(vel_plain, vel_live))
         vel_live.add_updater(update_vel_live)
         self.play(Indicate(vel_live[1], color=YELLOW))
@@ -329,7 +329,7 @@ class ChangementBase(Scene):
         self.wait(1)
 
         # ---- 3) Base 2: when y = 1, x = 2 ----
-        roll_to(1)
+        roll_to(1,speed=0.75)
         self.play(Circumscribe(x_read, color=YELLOW), x_read.animate.scale(1.3), run_time=1.5)
         self.play(x_read.animate.scale(1 / 1.3))
 
@@ -424,9 +424,9 @@ class ChangementBase(Scene):
         for y_stop in [2, 3]:
             roll_to(y_stop)
             wiggle_values(y_read, x_read, live, link)
-            self.wait(0.5)
+            self.wait(2)
         roll_to(0)
-        self.wait(0.5)
+        self.wait(1)
         # 2^y = x becomes log_2(2^y) = y, then a pause before changing the speed (and the base)
         conclusion = above_live(log_of_power("2"))
         self.play(ReplacementTransform(link, conclusion), run_time=1.5)
@@ -457,12 +457,12 @@ class ChangementBase(Scene):
         link = above_live(power_equality("10"))
         self.play(Write(link))
 
-        roll_to(1)
+        roll_to(1, speed=0.75)
         self.play(Circumscribe(x_read, color=YELLOW))
         wiggle_values(y_read, x_read, live10, link)
-        self.wait(0.5)
+        self.wait(2)
         roll_to(0)
-        self.wait(0.5)
+        self.wait(1)
 
         # ---- 5) Negative values: the top axis turns into -7..4 ----
         self.play(morph.animate.set_value(1), run_time=3, rate_func=smooth)
@@ -471,7 +471,7 @@ class ChangementBase(Scene):
         for y_stop in [-1, -2, -3]:
             roll_to(y_stop)
             wiggle_values(y_read, x_read, live10, link)
-            self.wait(0.5)
+            self.wait(2)
         roll_to(0)                                  # no stops on the way back
         self.wait(1)
 
@@ -479,7 +479,7 @@ class ChangementBase(Scene):
         for y_stop in [2, 3]:
             roll_to(y_stop)
             wiggle_values(y_read, x_read, live10, link)
-            self.wait(0.5)
+            self.wait(2)
         # To conclude: 10^y = x becomes log_10(10^y) = y
         conclusion = above_live(log_of_power("10"))
         self.play(ReplacementTransform(link, conclusion), run_time=1.5)
