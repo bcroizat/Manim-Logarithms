@@ -940,18 +940,29 @@ class RollingBall8(Scene):
         top_ball, top_spin = beach_ball(to_screen(0, top_y, 0) + UP * r, r, (top_color, YELLOW))
         bot_ball, bot_spin = beach_ball(to_screen(1, bot_y, 0) + UP * r, r, (bot_color, WHITE))
 
+        # A small jump (used in the introduction): while hop goes from 0 to 1, the balls fly
+        # over their axis along an arc and do not turn
+        hop = ValueTracker(0)
+        hop_height = 0.8
+
+        def lift():
+            p = hop.get_value()
+            return hop_height * 4 * p * (1 - p) if 0 < p < 1 else 0
+
         def rolling(y, spin, position):
             # Positions come from the exact formula, so there is no accumulated drift
-            state = {"pos": position(0), "screen_x": to_screen(position(0), y, 0)[0]}
+            state = {"pos": position(0), "screen_x": to_screen(position(0), y, 0)[0], "lift": 0}
 
             def roll(mob, dt):
                 s = t.get_value()
                 pos = position(s)
                 screen_x = to_screen(pos, y, s)[0]
-                mob.shift(RIGHT * (screen_x - state["screen_x"]))
-                # rolling without slipping on the axis at its current scale
-                spin.rotate(-(pos - state["pos"]) * unit(s, y) / r, about_point=np.array([screen_x, y + r, 0]))
-                state["pos"], state["screen_x"] = pos, screen_x
+                height = lift()
+                mob.shift(RIGHT * (screen_x - state["screen_x"]) + UP * (height - state["lift"]))
+                # rolling without slipping on the axis at its current scale (not while in the air)
+                if height == 0 and state["lift"] == 0:
+                    spin.rotate(-(pos - state["pos"]) * unit(s, y) / r, about_point=spin.get_center())
+                state["pos"], state["screen_x"], state["lift"] = pos, screen_x, height
             return roll
 
         top_ball.add_updater(rolling(top_y, top_spin, top_pos))
@@ -1003,16 +1014,50 @@ class RollingBall8(Scene):
             m[4].shift(RIGHT * 0.12)
 
         update_eq(eq)
-        eq.add_updater(update_eq)
         # Fixed-size box, sized for the widest equation shown
         widest = equation(bot_pos(self.t_end), top_pos(self.t_end)).arrange(RIGHT, buff=0.12)
         eq_box = SurroundingRectangle(widest, color=WHITE, buff=0.3, corner_radius=0.1)
         eq_box.stretch_to_fit_width(eq_box.width + 0.2).move_to(eq_center)
 
         self.add(top_axis, top_star, top_ball, top_marker,
-                 bot_axis, p_dot, p_label, bot_star, bot_ball, bot_marker,
-                 eq_box, eq)
+                 bot_axis, p_dot, p_label, bot_star, bot_ball, bot_marker)
         self.wait(1.5)
+
+        # ---- Introduction: the "ln" arrow, a short run, a jump back, then ln(x) = y ----
+        # A big arrow goes up from the red axis to the blue one: x -> y is the logarithm
+        big_arrow = Arrow(np.array([6.2, bot_y + 0.35, 0]), np.array([6.2, top_y - 0.35, 0]), buff=0,
+                          color=YELLOW, stroke_width=10, max_tip_length_to_length_ratio=0.15)
+        arrow_name = MathTex(r"\ln", color=YELLOW, font_size=48).next_to(big_arrow, LEFT, buff=0.2)
+        self.play(GrowArrow(big_arrow), Write(arrow_name), run_time=1.5)
+        self.play(ShowPassingFlash(big_arrow.copy().set_color(WHITE), time_width=0.5),
+                  Indicate(arrow_name, color=WHITE))
+
+        # The balls roll a little (t = 0 to 1.5), then jump back to their starting positions
+        self.play(t.animate.set_value(1.5), run_time=1.5 * slow_motion, rate_func=linear)
+        self.wait(0.5)
+        self.play(t.animate(rate_func=smooth).set_value(0), hop.animate(rate_func=linear).set_value(1),
+                  run_time=1.5)
+        self.wait(0.5)
+
+        # Balls at rest: the box appears with ln(x) = y, then x and y become 1 and 0
+        def symbolic(x_tex, y_tex):
+            tex = MathTex(r"\ln(", x_tex, ")", "=", y_tex)
+            tex[1].set_color(bot_color)
+            tex[4].set_color(top_color)
+            return tex.move_to(eq_center)
+
+        letters, values = symbolic("x", "y"), symbolic("1", "0")
+        self.play(FadeOut(big_arrow, shift=UP * 0.5), FadeOut(arrow_name, shift=UP * 0.5),
+                  Create(eq_box), Write(letters), run_time=1.5)
+        self.play(Circumscribe(letters, color=YELLOW))
+        self.wait(0.5)
+        self.play(ReplacementTransform(letters, values), run_time=1.5)
+        self.play(Indicate(values[1], color=YELLOW), Indicate(values[4], color=YELLOW))
+        self.wait(1)
+        # then the live values take over and the video goes on as before
+        self.play(ReplacementTransform(values, eq), run_time=0.8)
+        eq.add_updater(update_eq)
+        self.wait(0.5)
 
         # Roll, pausing when the bottom ball reaches each x in x_stops (at t = ln x),
         # then carry on until t = t_end
