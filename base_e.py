@@ -327,7 +327,7 @@ class BaseE(Scene):
         roll_to(0)
         self.wait(1)
 
-        # ---- 5) The balls go back and forth while ln(e^x) = x appears in the box ----
+        # ---- 5) The balls go back and forth while ln(e^y) = y appears in the box ----
         # The live equation ln(x) = y becomes ln(e^y) = y (since x = e^y)
         def exp_equation(y_value):
             return VGroup(MathTex(r"\ln(", font_size=42), MathTex("e", color=bot_color, font_size=42),
@@ -341,7 +341,7 @@ class BaseE(Scene):
             m[4].next_to(m[3], RIGHT, buff=0.2)
             m[5].next_to(m[4], RIGHT, buff=0.2)
 
-        general = MathTex(r"\ln", "(", "e", "^{x}", ")", "=", "x", font_size=42)
+        general = MathTex(r"\ln", "(", "e", "^{y}", ")", "=", "y", font_size=42)
         live_widest = exp_equation(2.45)
         arrange_exp_equation(live_widest)
         column = VGroup(general.copy(), live_widest).arrange(DOWN, buff=0.2)
@@ -374,7 +374,7 @@ class BaseE(Scene):
 
         swing(0.6)
         swing(2.2, Write(general))
-        # e^x takes the red of the red ball's position, x the blue of the blue ball's
+        # e^y takes the red of the red ball's position, y the blue of the blue ball's
         swing(1.0, Circumscribe(general, color=YELLOW), general[2:4].animate.set_color(bot_color),
               general[6].animate.set_color(top_color))
         swing(2.0, Indicate(live[2], color=YELLOW), Indicate(live[5], color=YELLOW))
@@ -397,7 +397,7 @@ class BaseE(Scene):
         self.wait(1)
 
         roll_to(-7, speed=2.5)
-        quantifier = MathTex(r"\forall x \in \mathbb{R}", font_size=42)
+        quantifier = MathTex(r"\forall y \in \mathbb{R}", font_size=42)
         top_row = VGroup(general.copy(), quantifier.copy()).arrange(RIGHT, buff=0.35)
         column = VGroup(top_row, live_negative.copy()).arrange(DOWN, buff=0.2)
         quantified_layout = VGroup(column, e_text.copy()).arrange(RIGHT, buff=0.8).move_to(DOWN * 0.1)
