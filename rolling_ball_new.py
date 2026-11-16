@@ -1072,3 +1072,518 @@ class RollingBall8(Scene):
                 self.wait(pause - 2)
 
         self.wait(1.5)
+
+
+# ====================== Neper's original construction (4 scenes) ======================
+# The red ball now runs towards a fixed point P with a speed proportional to its remaining
+# distance x to P (Neper's construction, x0 = 10^7), while the blue ball moves at constant
+# speed: y = Nap.Log(x). On screen the motion is exaggerated so that it can be seen, but the
+# values written in the boxes and the table are the true ones (x0 = 10^7).
+#   NeperContinu : from the usual axes to Neper's segment, continuous motion, y = Nap.Log(x),
+#                  and the product rule (first the naive one, then the corrected one)
+#   NeperSauts   : Neper's discrete steps, Y_n = n Y_1 and X_n = X_0 q^n
+#   NeperTable   : zoom out, the table (step, X_n, Y_n), then the numbers scroll by
+#   NeperEtLn    : back to the continuous motion, y = Nap.Log(x) = -10^7 ln(x / 10^7)
+
+NEPER_X0 = 10 ** 7
+NEPER_Q = 1 - 1e-7              # Neper's ratio between two consecutive X
+NEPER_Y1 = 1.00000005           # Neper's value of Nap.Log(9 999 999)
+
+
+class NeperMixin:
+    """Shared drawing for the Neper scenes (not a scene itself, so that manim -a skips it)."""
+    r = 0.4                     # ball radius
+    x0 = -6.5                   # screen position of graduation 0 (top axis)
+    top_y, bot_y = 2.2, -1.75
+    L = 11.0                    # screen length from the red ball's start to P (stands for 10^7)
+    hop_height = 0.8            # height of the balls' small jumps
+
+    def long_pause(self, seconds=3):
+        # pauses left for the spoken commentary
+        self.wait(seconds)
+
+    def neper_setup(self, transformed=True, show_time=True):
+        """Axes, P, stars, balls and time box. The balls follow self.blue_value() (position
+        on the top axis) and self.red_dist() (screen distance from the red ball to P); while
+        self.hop goes from 0 to 1, both balls jump over their axis instead of rolling."""
+        r, x0, top_y, bot_y, L = self.r, self.x0, self.top_y, self.bot_y, self.L
+        self.start_x, self.p_x = x0 + 1, x0 + 12
+
+        self.t = ValueTracker(0)
+        self.hop = ValueTracker(0)
+        self.blue_value = lambda: self.t.get_value()
+        self.red_dist = lambda: L * np.exp(-self.t.get_value() / L)   # v = x / L on screen
+
+        def make_axis(y):
+            axis = NumberLine(x_range=[0, 12, 1], length=12, include_numbers=True, font_size=26, color=GREY_B)
+            axis.shift(np.array([x0, y, 0]) - axis.n2p(0))
+            dots = DashedLine(axis.n2p(12), RIGHT * config.frame_x_radius + UP * y,
+                              dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+            return axis, dots
+
+        self.top_axis, self.top_dots = make_axis(top_y)
+        self.top_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(self.top_axis.n2p(0))
+        self.bot_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(
+            np.array([self.start_x, bot_y, 0]))
+        self.p_dot = Dot(np.array([self.p_x if transformed else x0, bot_y, 0]), color=YELLOW, radius=0.08)
+        self.p_label = MathTex("P", color=YELLOW).next_to(self.p_dot, UP, buff=0.2)
+        if transformed:
+            # Neper's segment: from the red ball's start to P
+            self.bot_line = Line(np.array([self.start_x, bot_y, 0]), np.array([self.p_x, bot_y, 0]),
+                                 color=GREY_B, stroke_width=2)
+            bottom = [self.bot_line]
+        else:
+            self.bot_axis, self.bot_dots = make_axis(bot_y)
+            bottom = [self.bot_axis, self.bot_dots]
+
+        self.top_ball, top_spin = beach_ball(np.array([x0, top_y + r, 0]), r, (BLUE, YELLOW))
+        self.bot_ball, bot_spin = beach_ball(np.array([self.start_x, bot_y + r, 0]), r, (RED, WHITE))
+        self.top_ball.set_z_index(1)
+        self.bot_ball.set_z_index(1)
+
+        def lift():
+            p = self.hop.get_value()
+            return self.hop_height * 4 * p * (1 - p) if 0 < p < 1 else 0
+
+        def follow(spin, get_x):
+            state = {"x": get_x(), "lift": 0}
+
+            def update(mob, dt):
+                x, height = get_x(), lift()
+                mob.shift(RIGHT * (x - state["x"]) + UP * (height - state["lift"]))
+                if height == 0 and state["lift"] == 0:      # rolls on the axis, not in the air
+                    spin.rotate(-(x - state["x"]) / r, about_point=spin.get_center())
+                state["x"], state["lift"] = x, height
+            return update
+
+        self.top_ball.add_updater(follow(top_spin, lambda: x0 + self.blue_value()))
+        self.bot_ball.add_updater(follow(bot_spin, lambda: self.p_x - self.red_dist()))
+
+        self.add(self.top_axis, self.top_dots, self.top_star, *bottom, self.p_dot, self.p_label,
+                 self.bot_star, self.top_ball, self.bot_ball)
+
+        if show_time:
+            self.time_display = VGroup(MathTex("t =", font_size=40), DecimalNumber(0, num_decimal_places=2,
+                                                                                    font_size=40))
+            widest = VGroup(MathTex("t =", font_size=40), DecimalNumber(10, font_size=40)).arrange(RIGHT, buff=0.2)
+            self.time_box = SurroundingRectangle(widest, color=WHITE, buff=0.15, corner_radius=0.1)
+            self.time_box.to_corner(UL, buff=0.25)
+
+            def update_time(m):
+                m[1].set_value(self.t.get_value())
+                m.arrange(RIGHT, buff=0.2).move_to(self.time_box)
+            self.time_display.add_updater(update_time)
+            self.time_display.update()
+            self.add(self.time_box, self.time_display)
+
+    # ---- helpers shared by several scenes ----
+    def red_ball_x(self):
+        return self.p_x - self.red_dist()
+
+    def distance_arrow(self):
+        """Red double arrow from the red ball to P, under the axis, with its name below."""
+        y = self.bot_y - 0.45
+
+        def build():
+            start = np.array([self.red_ball_x(), y, 0])
+            end = np.array([self.p_x, y, 0])
+            return DoubleArrow(start, end, buff=0, color=RED, stroke_width=4, tip_length=0.18,
+                               max_tip_length_to_length_ratio=0.2)
+
+        arrow = build()
+        arrow.add_updater(lambda m: m.become(build()))
+        return arrow
+
+    def roll_to(self, t_target, seconds_per_unit=1.4, rate_func=linear):
+        self.play(self.t.animate.set_value(t_target),
+                  run_time=abs(t_target - self.t.get_value()) * seconds_per_unit, rate_func=rate_func)
+
+    def live_values(self, font_size=40):
+        """y = ...   x = ... with the true values: y = t, x = 10^7 e^(-t / 10^7)."""
+        row = VGroup(VGroup(MathTex("y =", color=BLUE, font_size=font_size),
+                            DecimalNumber(0, num_decimal_places=2, color=BLUE, font_size=font_size)),
+                     VGroup(MathTex("x =", color=RED, font_size=font_size),
+                            DecimalNumber(NEPER_X0, num_decimal_places=2, color=RED, font_size=font_size)))
+
+        def update(m):
+            s = self.t.get_value()
+            m[0][1].set_value(s)
+            m[1][1].set_value(NEPER_X0 * np.exp(-s / NEPER_X0))
+            m[0].arrange(RIGHT, buff=0.15)
+            m[1].arrange(RIGHT, buff=0.15)
+            m.arrange(RIGHT, buff=0.9)
+        row.update_values = update
+        update(row)
+        return row
+
+
+def colored_math(*parts, font_size=40):
+    """MathTex built from (tex, color) pairs, each part in its own color."""
+    tex = MathTex(*[p for p, _ in parts], font_size=font_size)
+    for sub, (_, color) in zip(tex, parts):
+        sub.set_color(color)
+    return tex
+
+
+NAPLOG = r"\text{Nap.Log}"
+
+
+class NeperContinu(NeperMixin, MovingCameraScene):
+    def construct(self):
+        self.neper_setup(transformed=False)
+        self.long_pause(2)
+
+        # ---- From the usual axes to Neper's segment ----
+        # P slides to the end of the solid line
+        self.play(VGroup(self.p_dot, self.p_label).animate.shift(RIGHT * 12), run_time=2.5, rate_func=smooth)
+        # graduations, numbers and dotted end go; the part from 0 to 1 fades out
+        segment = Line(np.array([self.start_x, self.bot_y, 0]), np.array([self.x0 + 12, self.bot_y, 0]),
+                       color=GREY_B, stroke_width=2)
+        self.play(LaggedStart(*[FadeOut(n, shift=DOWN * 0.3) for n in self.bot_axis.numbers], lag_ratio=0.05),
+                  FadeOut(self.bot_axis.ticks), FadeOut(self.bot_dots), run_time=1.5)
+        self.add(segment)
+        self.bring_to_front(self.p_dot, self.p_label, self.bot_star, self.bot_ball)
+        self.play(FadeOut(self.bot_axis), run_time=1.2)
+        self.p_x = self.x0 + 12
+
+        # the distance from the red ball to P: x = 10^7 at the start
+        arrow = self.distance_arrow()
+        name = MathTex("x = 10^{7}", color=RED, font_size=40)
+        name_box = SurroundingRectangle(name, color=RED, buff=0.12, corner_radius=0.08)
+        name_group = VGroup(name, name_box)
+        name_group.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
+        name_group.update()
+        self.play(GrowFromCenter(arrow), run_time=1.5)
+        self.play(FadeIn(name_group, shift=UP * 0.2))
+        self.long_pause()
+
+        # ---- Central box: y and x (distance to P) with their true values ----
+        values = self.live_values()
+        widest = self.live_values()
+        widest[0][1].set_value(12)
+        widest.update_values = None
+        widest[0].arrange(RIGHT, buff=0.15)
+        widest.arrange(RIGHT, buff=0.9)
+        box_center = UP * 0.25
+        box = SurroundingRectangle(widest.move_to(box_center), color=WHITE, buff=0.25, corner_radius=0.1)
+        values.move_to(box_center)
+        values.add_updater(lambda m: (m.update_values(m), m.move_to(box_center)))
+        self.play(Create(box), FadeIn(values))
+        self.long_pause()
+
+        # the name under the arrow now just says "x": it changes as the ball moves
+        x_name = MathTex("x", color=RED, font_size=40)
+        x_box = SurroundingRectangle(x_name, color=RED, buff=0.12, corner_radius=0.08)
+        new_name = VGroup(x_name, x_box).next_to(arrow, DOWN, buff=0.15)
+        name_group.clear_updaters()
+        self.play(ReplacementTransform(name_group, new_name))
+        new_name.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
+
+        # ---- First back and forth: the red ball slows down as it gets closer to P ----
+        self.roll_to(7)
+        self.long_pause(2)
+        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.long_pause(2)
+
+        # ---- y = Nap.Log(x) appears, second back and forth ----
+        law = colored_math(("y", BLUE), ("=", WHITE), (NAPLOG + "(", WHITE), ("x", RED), (")", WHITE),
+                           font_size=44)
+        layout = VGroup(law.copy(), widest.copy()).arrange(DOWN, buff=0.25).move_to(box_center)
+        law.move_to(layout[0])
+        values_center = layout[1].get_center()
+        values.clear_updaters()
+        values.add_updater(lambda m: (m.update_values(m), m.move_to(values_center)))
+        self.play(Transform(box, SurroundingRectangle(layout, color=WHITE, buff=0.25, corner_radius=0.1)),
+                  values.animate.move_to(values_center), run_time=1)
+        self.play(Write(law), run_time=1.5)
+        self.play(Circumscribe(law, color=YELLOW))
+        self.long_pause()
+        self.roll_to(7)
+        self.long_pause(2)
+        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.long_pause(2)
+
+        # ---- The product rule: the naive guess, then the corrected rule ----
+        A, D = PURPLE, RED
+
+        def product_rule(scaled):
+            left = [(NAPLOG + "(", WHITE), ("A", A), (r"\times", WHITE), ("D", D)]
+            if scaled:
+                left.append((r"/\,10^{7}", YELLOW))
+            return colored_math(*left, (")", WHITE), ("=", WHITE), (NAPLOG + "(", WHITE), ("A", A), (")", WHITE),
+                                ("+", WHITE), (NAPLOG + "(", WHITE), ("D", D), (")", WHITE), font_size=40)
+
+        guess = product_rule(False)
+        question = MathTex("?", color=YELLOW, font_size=56)
+        guess_row = VGroup(guess, question).arrange(RIGHT, buff=0.3)
+        rule = product_rule(True)
+        rule_layout = VGroup(law.copy(), rule.copy()).arrange(DOWN, buff=0.3).move_to(box_center)
+        guess_row.move_to(rule_layout[1])
+        rule.move_to(rule_layout[1])
+        self.play(FadeOut(values), Transform(box, SurroundingRectangle(rule_layout, color=WHITE, buff=0.25,
+                                                                       corner_radius=0.1)),
+                  law.animate.move_to(rule_layout[0]))
+        self.play(Write(guess), run_time=2)
+        self.play(FadeIn(question, scale=1.5))
+        self.play(Wiggle(question))
+        self.long_pause(4)
+        # the correction: 10^7 plays the part of 1
+        self.play(FadeOut(question), TransformMatchingTex(guess, rule), run_time=2)
+        self.play(Circumscribe(rule[4], color=YELLOW), Indicate(rule[4], color=YELLOW))
+        self.long_pause(5)
+
+        # the rule goes, the values come back
+        self.play(FadeOut(rule), law.animate.move_to(layout[0]),
+                  Transform(box, SurroundingRectangle(layout, color=WHITE, buff=0.25, corner_radius=0.1)))
+        self.play(FadeIn(values))
+        self.long_pause(3)
+
+
+class NeperSauts(NeperMixin, MovingCameraScene):
+    q_screen = 1 - 1 / NeperMixin.L     # on screen, the first jump of the red ball is 1 unit, like the blue one
+
+    def construct(self):
+        self.neper_setup(transformed=True)
+        L = self.L
+        blue, red_d = ValueTracker(0), ValueTracker(L)
+        self.blue_value = blue.get_value
+        self.red_dist = red_d.get_value
+        self.time_display[1].num_decimal_places = 0
+        self.time_display.update()
+
+        box_center = UP * 0.25
+        marks = VGroup()
+
+        def mark(n):
+            # small ticks with Y_n and X_n at the balls' current positions
+            top_p = np.array([self.x0 + blue.get_value(), self.top_y, 0])
+            bot_p = np.array([self.red_ball_x(), self.bot_y, 0])
+            group = VGroup(
+                Line(top_p + DOWN * 0.15, top_p + UP * 0.15, color=BLUE, stroke_width=4),
+                MathTex(f"Y_{{{n}}}", color=BLUE, font_size=30).next_to(top_p, DOWN, buff=0.55),
+                Line(bot_p + DOWN * 0.15, bot_p + UP * 0.15, color=RED, stroke_width=4),
+                MathTex(f"X_{{{n}}}", color=RED, font_size=30).next_to(bot_p, DOWN, buff=0.25),
+            )
+            return group
+
+        def jump(n, run_time=1.4):
+            # both balls jump: one unit of time later, Y_n = n Y_1 and X_n = X_0 q^n
+            self.hop.set_value(0)
+            self.play(blue.animate.set_value(n), red_d.animate.set_value(L * self.q_screen ** n),
+                      self.hop.animate.set_value(1), self.t.animate.set_value(n), run_time=run_time,
+                      rate_func=smooth)
+            self.hop.set_value(0)
+
+        def box_row(*cells):
+            row = VGroup(*cells).arrange(RIGHT, buff=1.0)
+            return row
+
+        # Step 0
+        first = mark(0)
+        marks.add(first)
+        row_a = box_row(colored_math(("Y_0", BLUE), ("= 0", BLUE)),
+                        colored_math(("X_0", RED), ("= 10^{7}", RED)))
+        widest = VGroup(box_row(colored_math((r"Y_1 \approx 1.00000005", BLUE)),
+                                colored_math((r"X_1 = 10^{7} - 1 = 9{,}999{,}999", RED))),
+                        box_row(colored_math((r"Y_5 = 5\,Y_1", BLUE)), colored_math((r"X_5 = X_0\,q^{5}", RED))),
+                        ).arrange(DOWN, buff=0.3).move_to(box_center)
+        box = SurroundingRectangle(widest, color=WHITE, buff=0.25, corner_radius=0.1)
+        row_a.move_to(widest[0])
+        self.play(FadeIn(first))
+        self.play(Create(box), FadeIn(row_a))
+        self.long_pause()
+
+        # Step 1: the red ball has run exactly 1 unit, X_1 = 10^7 - 1; Y_1 is just over 1
+        jump(1)
+        marks.add(mark(1))
+        row_1 = box_row(colored_math((r"Y_1 \approx 1.00000005", BLUE)),
+                        colored_math((r"X_1 = 10^{7} - 1 = 9{,}999{,}999", RED))).move_to(widest[0])
+        self.play(FadeIn(marks[-1]), ReplacementTransform(row_a, row_1), run_time=1.5)
+        self.play(Indicate(row_1[0], color=YELLOW))
+        self.long_pause(5)
+
+        # Steps 2 to 5: only the names X_n, and Y_n = n Y_1
+        row_b = None
+        for n in range(2, 6):
+            jump(n)
+            marks.add(mark(n))
+            new_b = box_row(colored_math((rf"Y_{n} = {n}\,Y_1", BLUE)), colored_math((rf"X_{n}", RED)))
+            new_b.move_to(widest[1])
+            self.play(FadeIn(marks[-1]), FadeIn(new_b) if row_b is None else ReplacementTransform(row_b, new_b))
+            row_b = new_b
+            self.long_pause(2)
+        self.long_pause(2)
+
+        # ---- Again, with the ratio q: X_1 = X_0 q, so X_n = X_0 q^n ----
+        self.hop.set_value(0)
+        self.play(blue.animate.set_value(0), red_d.animate.set_value(L), self.hop.animate.set_value(1),
+                  self.t.animate.set_value(0), FadeOut(row_b), run_time=2, rate_func=smooth)
+        self.hop.set_value(0)
+        row_q = box_row(colored_math((r"Y_1 \approx 1.00000005", BLUE)),
+                        colored_math((r"X_1 = X_0\,q", RED), (r",\quad q = 1 - 10^{-7}", WHITE)))
+        row_q.move_to(widest[0])
+        new_box = SurroundingRectangle(VGroup(widest.copy(), row_q.copy()), color=WHITE, buff=0.25, corner_radius=0.1)
+        self.play(ReplacementTransform(row_1, row_q), Transform(box, new_box), run_time=1.5)
+        self.play(Circumscribe(row_q[1], color=YELLOW))
+        self.long_pause(4)
+
+        row_b = None
+        for n in range(1, 6):
+            jump(n)
+            new_b = box_row(colored_math((rf"Y_{n} = {n}\,Y_1" if n > 1 else r"Y_1", BLUE)),
+                            colored_math((rf"X_{n} = X_0\,q^{{{n}}}" if n > 1 else r"X_1 = X_0\,q", RED)))
+            new_b.move_to(widest[1])
+            self.play(FadeIn(new_b) if row_b is None else ReplacementTransform(row_b, new_b))
+            row_b = new_b
+            self.long_pause(2)
+        self.play(Indicate(row_b[0], color=YELLOW), Indicate(row_b[1], color=YELLOW))
+        self.long_pause(4)
+
+
+class NeperTable(NeperMixin, MovingCameraScene):
+    q_screen = NeperSauts.q_screen
+
+    def construct(self):
+        self.neper_setup(transformed=True, show_time=False)
+        L = self.L
+        blue, red_d = ValueTracker(0), ValueTracker(L)
+        self.blue_value = blue.get_value
+        self.red_dist = red_d.get_value
+        self.long_pause(1)
+
+        # Zoom out: the figure goes to the left half, the table is drawn on the right
+        edge = config.frame_x_radius
+        self.play(self.camera.frame.animate.scale(2).move_to(RIGHT * edge), run_time=2.5, rate_func=smooth)
+
+        fs = 60                                    # font size in the zoomed-out view (looks like 30)
+        cols = [9.4, 13.5, 18.8]                   # x of the columns: step, X, Y
+        top, row_h = 5.6, 1.35
+
+        def cell(tex, color, col, row):
+            return MathTex(tex, color=color, font_size=fs).move_to(np.array([cols[col], top - row * row_h, 0]))
+
+        header = VGroup(Tex(r"\'Etape", font_size=fs).move_to(np.array([cols[0], top + 1.5, 0])),
+                        MathTex("X", color=RED, font_size=fs).move_to(np.array([cols[1], top + 1.5, 0])),
+                        MathTex(r"Y = " + NAPLOG + "(X)", color=BLUE, font_size=fs).move_to(
+                            np.array([cols[2], top + 1.5, 0])))
+        rule = Line(np.array([8.4, top + 0.75, 0]), np.array([21.0, top + 0.75, 0]), color=GREY_B, stroke_width=3)
+        self.play(Write(header), Create(rule), run_time=2)
+
+        symbolic = [
+            ("0", r"X_0 = 10^{7}", r"Y_0 = 0"),
+            ("1", r"X_0\,q", r"Y_1"),
+            ("2", r"X_0\,q^{2}", r"2\,Y_1"),
+            ("3", r"X_0\,q^{3}", r"3\,Y_1"),
+            ("4", r"X_0\,q^{4}", r"4\,Y_1"),
+        ]
+        rows = VGroup()
+
+        def jump(n):
+            self.hop.set_value(0)
+            self.play(blue.animate.set_value(n), red_d.animate.set_value(L * self.q_screen ** n),
+                      self.hop.animate.set_value(1), run_time=1.3, rate_func=smooth)
+            self.hop.set_value(0)
+
+        for n, (step, x_tex, y_tex) in enumerate(symbolic):
+            if n > 0:
+                jump(n)
+            row = VGroup(cell(step, WHITE, 0, n), cell(x_tex, RED, 1, n), cell(y_tex, BLUE, 2, n))
+            self.play(FadeIn(row, shift=LEFT * 0.3))
+            rows.add(row)
+            self.long_pause(1.5)
+        dots = VGroup(*[cell(r"\vdots", c, i, 5) for i, c in enumerate([WHITE, RED, BLUE])])
+        general = VGroup(cell("n", WHITE, 0, 6), cell(r"X_0\,q^{n}", RED, 1, 6), cell(r"n\,Y_1", BLUE, 2, 6))
+        self.play(FadeIn(dots), FadeIn(general, shift=LEFT * 0.3))
+        self.play(Circumscribe(general, color=YELLOW))
+        self.long_pause(4)
+
+        # ---- The letters become numbers: what Neper had to compute by hand ----
+        numeric = [
+            ("0", r"10{,}000{,}000", r"0"),
+            ("1", r"9{,}999{,}999", r"1.00000005"),
+            ("2", r"9{,}999{,}998.0000001", r"2.0000001"),
+            ("3", r"9{,}999{,}997.0000003", r"3.00000015"),
+            ("4", r"9{,}999{,}996.0000006", r"4.0000002"),
+        ]
+        for n, (step, x_tex, y_tex) in enumerate(numeric):
+            self.play(ReplacementTransform(rows[n][1], cell(x_tex, RED, 1, n)),
+                      ReplacementTransform(rows[n][2], cell(y_tex, BLUE, 2, n)), run_time=0.8)
+        self.long_pause(3)
+
+        # ---- The numbers scroll by: hundreds of lines to compute ----
+        # a fixed set of rows whose values follow N; they slide up as N grows
+        n_rows = 8
+        N = ValueTracker(0)
+        window_top, window_bottom = top + 0.4, top - (n_rows - 1) * row_h - 0.4
+
+        def number(decimals, color, commas=True):
+            return DecimalNumber(0, num_decimal_places=decimals, color=color, font_size=fs,
+                                 group_with_commas=commas)
+
+        slots = VGroup(*[VGroup(Integer(0, font_size=fs), number(7, RED), number(8, BLUE, commas=False))
+                         for _ in range(n_rows)])
+
+        def scroll(group):
+            value = N.get_value()
+            first, frac = int(np.floor(value)), value - np.floor(value)
+            for i, slot in enumerate(group):
+                n = first + i
+                y = top - (i - frac) * row_h
+                slot[0].set_value(n)
+                slot[1].set_value(NEPER_X0 * NEPER_Q ** n)
+                slot[2].set_value(n * NEPER_Y1)
+                for c, m in enumerate(slot):
+                    m.move_to(np.array([cols[c], y, 0]))
+                # fade out at the top and at the bottom of the window
+                fade = min(1, max(0, (window_top - y) / 0.6), max(0, (y - window_bottom) / 0.6))
+                slot.set_opacity(fade)
+
+        scroll(slots)
+        self.play(FadeOut(rows), FadeOut(dots), FadeOut(general), FadeIn(slots), run_time=1)
+        slots.add_updater(scroll)
+        self.play(N.animate.set_value(12), run_time=4, rate_func=linear)
+        self.play(N.animate.set_value(1000), run_time=8, rate_func=rate_functions.ease_in_quad)
+        slots.clear_updaters()
+        self.long_pause(4)
+
+
+class NeperEtLn(NeperMixin, MovingCameraScene):
+    def construct(self):
+        self.neper_setup(transformed=True)
+        arrow = self.distance_arrow()
+        x_name = MathTex("x", color=RED, font_size=40)
+        name = VGroup(x_name, SurroundingRectangle(x_name, color=RED, buff=0.12, corner_radius=0.08))
+        name.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
+        name.update()
+        self.add(arrow, name)
+
+        # y = Nap.Log(x) = -10^7 ln(x / 10^7), with the live values underneath
+        box_center = UP * 0.25
+        formula = colored_math(("y", BLUE), ("=", WHITE), (NAPLOG + "(", WHITE), ("x", RED), (")", WHITE),
+                               ("=", WHITE), (r"-10^{7}\,\ln\!\Big(", WHITE), ("x", RED), (r"\,/\,10^{7}\Big)", WHITE),
+                               font_size=44)
+        values = self.live_values()
+        widest = self.live_values()
+        widest[0][1].set_value(12)
+        widest.update_values = None
+        widest[0].arrange(RIGHT, buff=0.15)
+        widest.arrange(RIGHT, buff=0.9)
+        layout = VGroup(formula.copy(), widest).arrange(DOWN, buff=0.3).move_to(box_center)
+        formula.move_to(layout[0])
+        values_center = layout[1].get_center()
+        values.add_updater(lambda m: (m.update_values(m), m.move_to(values_center)))
+        values.update()
+        box = SurroundingRectangle(layout, color=WHITE, buff=0.25, corner_radius=0.1)
+        self.long_pause(1.5)
+        self.play(Create(box), FadeIn(values))
+        self.long_pause(1)
+        self.play(Write(formula[:5]), run_time=1.5)
+        self.long_pause(2)
+        self.play(Write(formula[5:]), run_time=2)
+        self.play(Circumscribe(formula[5:], color=YELLOW))
+        self.long_pause(4)
+
+        self.roll_to(8)
+        self.long_pause(3)
+        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.long_pause(4)
