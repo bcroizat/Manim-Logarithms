@@ -1086,6 +1086,33 @@ class RollingBall8(Scene):
 #   NeperEtLn    : back to the continuous motion, y = Nap.Log(x) = -10^7 ln(x / 10^7)
 
 NEPER_X0 = 10 ** 7
+
+
+class SpacedNumber(DecimalNumber):
+    """DecimalNumber written 10 000 000.00: a thin space between thousands instead of a comma.
+    The separators are kept as invisible commas (about the width of a thin space); updating
+    the value copies the old glyphs' style, so their visibility is set again each time."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("group_with_commas", True)
+        self.visible_opacity = 1
+        super().__init__(*args, **kwargs)
+        self._hide_separators()
+
+    def _hide_separators(self):
+        for mob, char in zip(self.submobjects, self._get_num_string(self.number)):
+            mob.set_opacity(0 if char == "," else self.visible_opacity)
+
+    def set_value(self, number):
+        super().set_value(number)
+        self._hide_separators()
+        return self
+
+    def set_visible_opacity(self, opacity):
+        self.visible_opacity = opacity
+        self._hide_separators()
+        return self
+
 NEPER_Q = 1 - 1e-7              # Neper's ratio between two consecutive X
 NEPER_Y1 = 1.00000005           # Neper's value of Nap.Log(9 999 999)
 
@@ -1097,6 +1124,7 @@ class NeperMixin:
     top_y, bot_y = 2.2, -1.75
     L = 11.0                    # screen length from the red ball's start to P (stands for 10^7)
     hop_height = 0.8            # height of the balls' small jumps
+    red_slowness = 1.5          # on screen the red ball starts at 1 / red_slowness of the blue ball's speed
 
     def long_pause(self, seconds=3):
         # pauses left for the spoken commentary
@@ -1112,7 +1140,8 @@ class NeperMixin:
         self.t = ValueTracker(0)
         self.hop = ValueTracker(0)
         self.blue_value = lambda: self.t.get_value()
-        self.red_dist = lambda: L * np.exp(-self.t.get_value() / L)   # v = x / L on screen
+        # v proportional to x on screen: x = L e^(-t / (L red_slowness))
+        self.red_dist = lambda: L * np.exp(-self.t.get_value() / (L * self.red_slowness))
 
         def make_axis(y):
             axis = NumberLine(x_range=[0, 12, 1], length=12, include_numbers=True, font_size=26, color=GREY_B)
@@ -1203,7 +1232,7 @@ class NeperMixin:
         row = VGroup(VGroup(MathTex("y =", color=BLUE, font_size=font_size),
                             DecimalNumber(0, num_decimal_places=2, color=BLUE, font_size=font_size)),
                      VGroup(MathTex("x =", color=RED, font_size=font_size),
-                            DecimalNumber(NEPER_X0, num_decimal_places=2, color=RED, font_size=font_size)))
+                            SpacedNumber(NEPER_X0, num_decimal_places=2, color=RED, font_size=font_size)))
 
         def update(m):
             s = self.t.get_value()
@@ -1243,6 +1272,7 @@ class NeperContinu(NeperMixin, MovingCameraScene):
                   FadeOut(self.bot_axis.ticks), FadeOut(self.bot_dots), run_time=1.5)
         self.add(segment)
         self.bring_to_front(self.p_dot, self.p_label, self.bot_star, self.bot_ball)
+        self.bot_axis.remove(self.bot_axis.ticks, self.bot_axis.numbers)   # already gone: they must not come back
         self.play(FadeOut(self.bot_axis), run_time=1.2)
         self.p_x = self.x0 + 12
 
@@ -1267,8 +1297,17 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         box_center = UP * 0.25
         box = SurroundingRectangle(widest.move_to(box_center), color=WHITE, buff=0.25, corner_radius=0.1)
         values.move_to(box_center)
+        power = VGroup(values[0].copy(), MathTex("x = 10^{7}", color=RED, font_size=40))
+        power.arrange(RIGHT, buff=0.9).move_to(box_center)
+        self.play(Create(box), FadeIn(power))
+        self.long_pause(2)
+        self.play(ReplacementTransform(power[0], values[0]), ReplacementTransform(power[1], values[1]),
+                  run_time=1.5)
+        # the transforms put the two halves on the scene separately: put the whole row back,
+        # so that its updater runs
+        self.remove(values[0], values[1])
+        self.add(values)
         values.add_updater(lambda m: (m.update_values(m), m.move_to(box_center)))
-        self.play(Create(box), FadeIn(values))
         self.long_pause()
 
         # the name under the arrow now just says "x": it changes as the ball moves
@@ -1330,7 +1369,7 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         # the correction: 10^7 plays the part of 1
         self.play(FadeOut(question), TransformMatchingTex(guess, rule), run_time=2)
         self.play(Circumscribe(rule[4], color=YELLOW), Indicate(rule[4], color=YELLOW))
-        self.long_pause(5)
+        self.long_pause(8)
 
         # the rule goes, the values come back
         self.play(FadeOut(rule), law.animate.move_to(layout[0]),
@@ -1384,7 +1423,7 @@ class NeperSauts(NeperMixin, MovingCameraScene):
         row_a = box_row(colored_math(("Y_0", BLUE), ("= 0", BLUE)),
                         colored_math(("X_0", RED), ("= 10^{7}", RED)))
         widest = VGroup(box_row(colored_math((r"Y_1 \approx 1.00000005", BLUE)),
-                                colored_math((r"X_1 = 10^{7} - 1 = 9{,}999{,}999", RED))),
+                                colored_math((r"X_1 = 10^{7} - 1 = 9\,999\,999", RED))),
                         box_row(colored_math((r"Y_5 = 5\,Y_1", BLUE)), colored_math((r"X_5 = X_0\,q^{5}", RED))),
                         ).arrange(DOWN, buff=0.3).move_to(box_center)
         box = SurroundingRectangle(widest, color=WHITE, buff=0.25, corner_radius=0.1)
@@ -1397,7 +1436,7 @@ class NeperSauts(NeperMixin, MovingCameraScene):
         jump(1)
         marks.add(mark(1))
         row_1 = box_row(colored_math((r"Y_1 \approx 1.00000005", BLUE)),
-                        colored_math((r"X_1 = 10^{7} - 1 = 9{,}999{,}999", RED))).move_to(widest[0])
+                        colored_math((r"X_1 = 10^{7} - 1 = 9\,999\,999", RED))).move_to(widest[0])
         self.play(FadeIn(marks[-1]), ReplacementTransform(row_a, row_1), run_time=1.5)
         self.play(Indicate(row_1[0], color=YELLOW))
         self.long_pause(5)
@@ -1499,11 +1538,11 @@ class NeperTable(NeperMixin, MovingCameraScene):
 
         # ---- The letters become numbers: what Neper had to compute by hand ----
         numeric = [
-            ("0", r"10{,}000{,}000", r"0"),
-            ("1", r"9{,}999{,}999", r"1.00000005"),
-            ("2", r"9{,}999{,}998.0000001", r"2.0000001"),
-            ("3", r"9{,}999{,}997.0000003", r"3.00000015"),
-            ("4", r"9{,}999{,}996.0000006", r"4.0000002"),
+            ("0", r"10\,000\,000", r"0"),
+            ("1", r"9\,999\,999", r"1.00000005"),
+            ("2", r"9\,999\,998.0000001", r"2.0000001"),
+            ("3", r"9\,999\,997.0000003", r"3.00000015"),
+            ("4", r"9\,999\,996.0000006", r"4.0000002"),
         ]
         for n, (step, x_tex, y_tex) in enumerate(numeric):
             self.play(ReplacementTransform(rows[n][1], cell(x_tex, RED, 1, n)),
@@ -1516,11 +1555,10 @@ class NeperTable(NeperMixin, MovingCameraScene):
         N = ValueTracker(0)
         window_top, window_bottom = top + 0.4, top - (n_rows - 1) * row_h - 0.4
 
-        def number(decimals, color, commas=True):
-            return DecimalNumber(0, num_decimal_places=decimals, color=color, font_size=fs,
-                                 group_with_commas=commas)
-
-        slots = VGroup(*[VGroup(Integer(0, font_size=fs), number(7, RED), number(8, BLUE, commas=False))
+        slots = VGroup(*[VGroup(SpacedNumber(0, num_decimal_places=0, font_size=fs),
+                                SpacedNumber(0, num_decimal_places=7, color=RED, font_size=fs),
+                                DecimalNumber(0, num_decimal_places=8, color=BLUE, font_size=fs,
+                                              group_with_commas=False))
                          for _ in range(n_rows)])
 
         def scroll(group):
@@ -1536,7 +1574,9 @@ class NeperTable(NeperMixin, MovingCameraScene):
                     m.move_to(np.array([cols[c], y, 0]))
                 # fade out at the top and at the bottom of the window
                 fade = min(1, max(0, (window_top - y) / 0.6), max(0, (y - window_bottom) / 0.6))
-                slot.set_opacity(fade)
+                slot[0].set_visible_opacity(fade)
+                slot[1].set_visible_opacity(fade)
+                slot[2].set_opacity(fade)
 
         scroll(slots)
         self.play(FadeOut(rows), FadeOut(dots), FadeOut(general), FadeIn(slots), run_time=1)
