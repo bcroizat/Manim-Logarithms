@@ -1130,7 +1130,7 @@ class NeperMixin:
         # pauses left for the spoken commentary
         self.wait(seconds)
 
-    def neper_setup(self, transformed=True, show_time=True):
+    def neper_setup(self, transformed=True, show_time=True, time_label="t ="):
         """Axes, P, stars, balls and time box. The balls follow self.blue_value() (position
         on the top axis) and self.red_dist() (screen distance from the red ball to P); while
         self.hop goes from 0 to 1, both balls jump over their axis instead of rolling."""
@@ -1192,9 +1192,9 @@ class NeperMixin:
                  self.bot_star, self.top_ball, self.bot_ball)
 
         if show_time:
-            self.time_display = VGroup(MathTex("t =", font_size=40), DecimalNumber(0, num_decimal_places=2,
-                                                                                    font_size=40))
-            widest = VGroup(MathTex("t =", font_size=40), DecimalNumber(10, font_size=40)).arrange(RIGHT, buff=0.2)
+            self.time_display = VGroup(MathTex(time_label, font_size=40), DecimalNumber(0, num_decimal_places=2,
+                                                                                         font_size=40))
+            widest = VGroup(MathTex(time_label, font_size=40), DecimalNumber(10, font_size=40)).arrange(RIGHT, buff=0.2)
             self.time_box = SurroundingRectangle(widest, color=WHITE, buff=0.15, corner_radius=0.1)
             self.time_box.to_corner(UL, buff=0.25)
 
@@ -1379,10 +1379,13 @@ class NeperContinu(NeperMixin, MovingCameraScene):
 
 
 class NeperSauts(NeperMixin, MovingCameraScene):
-    q_screen = 1 - 1 / NeperMixin.L     # on screen, the first jump of the red ball is 1 unit, like the blue one
+    # on screen, the red ball's jumps are a little shorter than the blue one's (about 0.8 unit for
+    # the first) and keep shrinking; a little less slow than NeperContinu so the X_n marks stay apart
+    q_screen = np.exp(-1 / (NeperMixin.L * 1.2))
 
     def construct(self):
-        self.neper_setup(transformed=True)
+        # the steps are not exactly units of time (the time of step n is n Y_1): count steps
+        self.neper_setup(transformed=True, time_label=r"\text{\'etape} =")
         L = self.L
         blue, red_d = ValueTracker(0), ValueTracker(L)
         self.blue_value = blue.get_value
