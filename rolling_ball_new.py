@@ -1122,10 +1122,14 @@ class NeperMixin:
     r = 0.4                     # ball radius
     x0 = -6.5                   # screen position of graduation 0 (top axis)
     top_y, bot_y = 2.2, -1.75
-    L = 11.0                    # screen length from the red ball's start to P (stands for 10^7)
+    L = 12.0                    # screen length from the red ball's start to P (stands for 10^7)
     hop_height = 0.8            # height of the balls' small jumps
-    red_tau = 17.4              # on screen x = L e^(-t / red_tau): by t = 40 the red ball is about 10 % from P
     long_scale = 50             # the top axis can be stretched to show 0..long_scale (see top_zoom)
+    # On screen the red ball starts at exactly the blue ball's speed and then slows down, so it is
+    # always behind the blue one (both start at graduation 0). With the top axis showing 0..S on
+    # 12 screen units, the blue ball moves 12 / S per unit of time, hence x = L e^(-t / red_tau)
+    # with red_tau = L S / 12. The continuous scenes use S = long_scale; the step scenes S = 12.
+    red_tau = L * long_scale / 12
 
     def long_pause(self, seconds=3):
         # pauses left for the spoken commentary
@@ -1136,13 +1140,16 @@ class NeperMixin:
         on the top axis) and self.red_dist() (screen distance from the red ball to P); while
         self.hop goes from 0 to 1, both balls jump over their axis instead of rolling."""
         r, x0, top_y, bot_y, L = self.r, self.x0, self.top_y, self.bot_y, self.L
-        self.start_x, self.p_x = x0 + 1, x0 + 12
+        self.start_x, self.p_x = x0, x0 + 12      # the red ball starts below the blue one
 
         self.t = ValueTracker(0)
-        self.hop = ValueTracker(0)
+        self.hop = ValueTracker(0)          # both balls jump while it goes from 0 to 1
+        self.red_hop = ValueTracker(0)      # only the red ball jumps
         self.blue_value = lambda: self.t.get_value()
         # v proportional to x on screen
-        self.red_dist = lambda: L * np.exp(-self.t.get_value() / self.red_tau)
+        # (on the usual axes the red ball still sits on graduation 1, at L - 1 from P)
+        self.red_start = ValueTracker(L if transformed else L - 1)
+        self.red_dist = lambda: self.red_start.get_value() * np.exp(-self.t.get_value() / self.red_tau)
 
         def make_axis(y):
             axis = NumberLine(x_range=[0, 12, 1], length=12, include_numbers=True, font_size=26, color=GREY_B)
@@ -1185,7 +1192,7 @@ class NeperMixin:
         self.top_axis.add_updater(draw_top_axis)
         self.top_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(np.array([x0, top_y, 0]))
         self.bot_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(
-            np.array([self.start_x, bot_y, 0]))
+            np.array([self.start_x if transformed else x0 + 1, bot_y, 0]))
         self.p_dot = Dot(np.array([self.p_x if transformed else x0, bot_y, 0]), color=YELLOW, radius=0.08)
         self.p_label = MathTex("P", color=YELLOW).next_to(self.p_dot, UP, buff=0.2)
         if transformed:
@@ -1198,27 +1205,30 @@ class NeperMixin:
             bottom = [self.bot_axis, self.bot_dots]
 
         self.top_ball, top_spin = beach_ball(np.array([x0, top_y + r, 0]), r, (BLUE, YELLOW))
-        self.bot_ball, bot_spin = beach_ball(np.array([self.start_x, bot_y + r, 0]), r, (RED, WHITE))
+        self.bot_ball, bot_spin = beach_ball(np.array([self.p_x - self.red_start.get_value(), bot_y + r, 0]),
+                                             r, (RED, WHITE))
         self.top_ball.set_z_index(1)
         self.bot_ball.set_z_index(1)
 
-        def lift():
-            p = self.hop.get_value()
+        def lift(tracker):
+            p = tracker.get_value()
             return self.hop_height * 4 * p * (1 - p) if 0 < p < 1 else 0
 
-        def follow(spin, get_x):
+        def follow(spin, get_x, get_lift):
             state = {"x": get_x(), "lift": 0}
 
             def update(mob, dt):
-                x, height = get_x(), lift()
+                x, height = get_x(), get_lift()
                 mob.shift(RIGHT * (x - state["x"]) + UP * (height - state["lift"]))
                 if height == 0 and state["lift"] == 0:      # rolls on the axis, not in the air
                     spin.rotate(-(x - state["x"]) / r, about_point=spin.get_center())
                 state["x"], state["lift"] = x, height
             return update
 
-        self.top_ball.add_updater(follow(top_spin, lambda: self.top_screen(self.blue_value())))
-        self.bot_ball.add_updater(follow(bot_spin, lambda: self.p_x - self.red_dist()))
+        self.top_ball.add_updater(follow(top_spin, lambda: self.top_screen(self.blue_value()),
+                                         lambda: lift(self.hop)))
+        self.bot_ball.add_updater(follow(bot_spin, lambda: self.p_x - self.red_dist(),
+                                         lambda: lift(self.hop) + lift(self.red_hop)))
 
         self.add(self.top_axis, self.top_dots, self.top_star, *bottom, self.p_dot, self.p_label,
                  self.bot_star, self.top_ball, self.bot_ball)
@@ -1297,16 +1307,20 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         # ---- From the usual axes to Neper's segment ----
         # P slides to the end of the solid line
         self.play(VGroup(self.p_dot, self.p_label).animate.shift(RIGHT * 12), run_time=2.5, rate_func=smooth)
-        # graduations, numbers and dotted end go; the part from 0 to 1 fades out
-        segment = Line(np.array([self.start_x, self.bot_y, 0]), np.array([self.x0 + 12, self.bot_y, 0]),
+        # graduations, numbers and dotted end go; the line itself stays: it becomes Neper's segment
+        segment = Line(np.array([self.start_x, self.bot_y, 0]), np.array([self.p_x, self.bot_y, 0]),
                        color=GREY_B, stroke_width=2)
         self.play(LaggedStart(*[FadeOut(n, shift=DOWN * 0.3) for n in self.bot_axis.numbers], lag_ratio=0.05),
-                  FadeOut(self.bot_axis.ticks), FadeOut(self.bot_dots), run_time=1.5)
-        self.add(segment)
-        self.bring_to_front(self.p_dot, self.p_label, self.bot_star, self.bot_ball)
+                  FadeOut(self.bot_axis.ticks), FadeOut(self.bot_dots), run_time=2)
         self.bot_axis.remove(self.bot_axis.ticks, self.bot_axis.numbers)   # already gone: they must not come back
-        self.play(FadeOut(self.bot_axis), run_time=1.2)
-        self.p_x = self.x0 + 12
+        self.play(FadeIn(segment), FadeOut(self.bot_axis), run_time=1.5)
+        self.bring_to_front(self.p_dot, self.p_label, self.bot_star, self.bot_ball)
+        # the red ball (with its star) hops back from 1 to 0, below the blue one
+        self.play(self.red_start.animate.set_value(self.L), self.red_hop.animate.set_value(1),
+                  self.bot_star.animate.move_to(np.array([self.start_x, self.bot_y, 0])), run_time=1.5,
+                  rate_func=smooth)
+        self.red_hop.set_value(0)
+        self.long_pause(1)
 
         # the distance from the red ball to P: x = 10^7 at the start
         arrow = self.distance_arrow()
@@ -1315,8 +1329,8 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         name_group = VGroup(name, name_box)
         name_group.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
         name_group.update()
-        self.play(GrowFromCenter(arrow), run_time=1.5)
-        self.play(FadeIn(name_group, shift=UP * 0.2))
+        self.play(Create(arrow), run_time=2.5, rate_func=smooth)
+        self.play(FadeIn(name_group, shift=UP * 0.2), run_time=1.5)
         self.long_pause()
 
         # the blue axis is stretched to 0..50, so that time can run long enough to see the red
@@ -1356,7 +1370,7 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         new_name.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
 
         # ---- First back and forth: the red ball slows down as it gets closer to P ----
-        self.roll_to(40, seconds_per_unit=0.3)
+        self.roll_to(45, seconds_per_unit=0.3)
         self.long_pause(2)
         self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(2)
@@ -1374,7 +1388,7 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         self.play(Write(law), run_time=1.5)
         self.play(Circumscribe(law, color=YELLOW))
         self.long_pause()
-        self.roll_to(40, seconds_per_unit=0.3)
+        self.roll_to(45, seconds_per_unit=0.3)
         self.long_pause(2)
         self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(2)
@@ -1416,9 +1430,9 @@ class NeperContinu(NeperMixin, MovingCameraScene):
 
 
 class NeperSauts(NeperMixin, MovingCameraScene):
-    # on screen, the red ball's jumps are a little shorter than the blue one's (about 0.8 unit for
-    # the first) and keep shrinking; a little less slow than NeperContinu so the X_n marks stay apart
-    q_screen = np.exp(-1 / (NeperMixin.L * 1.2))
+    # same rule as the continuous scenes with the axis 0..12: one step is one unit of time, the blue
+    # ball jumps 1, the red one a little less (about 0.96 at first) and less and less after
+    q_screen = np.exp(-1 / NeperMixin.L)
 
     def construct(self):
         # the steps are not exactly units of time (the time of step n is n Y_1): count steps
@@ -1663,7 +1677,7 @@ class NeperEtLn(NeperMixin, MovingCameraScene):
         self.play(Circumscribe(formula[5:], color=YELLOW))
         self.long_pause(4)
 
-        self.roll_to(40, seconds_per_unit=0.3)
+        self.roll_to(45, seconds_per_unit=0.3)
         self.long_pause(3)
         self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(4)
