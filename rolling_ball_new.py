@@ -1124,13 +1124,14 @@ class NeperMixin:
     top_y, bot_y = 2.2, -1.75
     L = 11.0                    # screen length from the red ball's start to P (stands for 10^7)
     hop_height = 0.8            # height of the balls' small jumps
-    red_slowness = 1.5          # on screen the red ball starts at 1 / red_slowness of the blue ball's speed
+    red_tau = 17.4              # on screen x = L e^(-t / red_tau): by t = 40 the red ball is about 10 % from P
+    long_scale = 50             # the top axis can be stretched to show 0..long_scale (see top_zoom)
 
     def long_pause(self, seconds=3):
         # pauses left for the spoken commentary
         self.wait(seconds)
 
-    def neper_setup(self, transformed=True, show_time=True, time_label="t ="):
+    def neper_setup(self, transformed=True, show_time=True, time_label="t =", top_zoomed=False):
         """Axes, P, stars, balls and time box. The balls follow self.blue_value() (position
         on the top axis) and self.red_dist() (screen distance from the red ball to P); while
         self.hop goes from 0 to 1, both balls jump over their axis instead of rolling."""
@@ -1140,8 +1141,8 @@ class NeperMixin:
         self.t = ValueTracker(0)
         self.hop = ValueTracker(0)
         self.blue_value = lambda: self.t.get_value()
-        # v proportional to x on screen: x = L e^(-t / (L red_slowness))
-        self.red_dist = lambda: L * np.exp(-self.t.get_value() / (L * self.red_slowness))
+        # v proportional to x on screen
+        self.red_dist = lambda: L * np.exp(-self.t.get_value() / self.red_tau)
 
         def make_axis(y):
             axis = NumberLine(x_range=[0, 12, 1], length=12, include_numbers=True, font_size=26, color=GREY_B)
@@ -1150,8 +1151,39 @@ class NeperMixin:
                               dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
             return axis, dots
 
-        self.top_axis, self.top_dots = make_axis(top_y)
-        self.top_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(self.top_axis.n2p(0))
+        # Top axis: 0..12 (one unit per graduation), which top_zoom (0 -> 1) turns into 0..long_scale
+        # on the same length, numbered every 5, so that time can run longer
+        self.top_zoom = ValueTracker(1 if top_zoomed else 0)
+        big = self.long_scale
+
+        def top_unit():
+            m = self.top_zoom.get_value()
+            return (1 - m) + m * 12 / big
+
+        self.top_screen = lambda v: x0 + v * top_unit()
+        top_line = Line(np.array([x0, top_y, 0]), np.array([x0 + 12, top_y, 0]), color=GREY_B, stroke_width=2)
+        self.top_dots = DashedLine(top_line.get_end(), RIGHT * config.frame_x_radius + UP * top_y,
+                                   dash_length=0.06, dashed_ratio=0.5, color=GREY_B)
+        ticks = VGroup(*[Line(DOWN * 0.1, UP * 0.1, color=GREY_B, stroke_width=2) for _ in range(big + 1)])
+        numbers = VGroup(*[MathTex(str(k), font_size=26) for k in range(big + 1)])
+
+        def draw_top_axis(group):
+            m = self.top_zoom.get_value()
+            for k, (tick, num) in enumerate(zip(ticks, numbers)):
+                p = np.array([self.top_screen(k), top_y, 0])
+                h = 0.1 if k % 5 == 0 else 0.1 - 0.05 * m       # small ticks between the numbered ones
+                tick.put_start_and_end_on(p + DOWN * h, p + UP * h)
+                tick.set_stroke(opacity=1 if k <= 12 else m)
+                num.next_to(p, DOWN, buff=0.25)
+                if k % 5 == 0:
+                    num.set_opacity(1 if k <= 12 else m)
+                else:
+                    num.set_opacity(1 - m if k <= 12 else 0)
+
+        self.top_axis = VGroup(top_line, ticks, numbers)
+        draw_top_axis(self.top_axis)
+        self.top_axis.add_updater(draw_top_axis)
+        self.top_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(np.array([x0, top_y, 0]))
         self.bot_star = Star(outer_radius=0.12, color=GREEN, fill_opacity=1).move_to(
             np.array([self.start_x, bot_y, 0]))
         self.p_dot = Dot(np.array([self.p_x if transformed else x0, bot_y, 0]), color=YELLOW, radius=0.08)
@@ -1185,7 +1217,7 @@ class NeperMixin:
                 state["x"], state["lift"] = x, height
             return update
 
-        self.top_ball.add_updater(follow(top_spin, lambda: x0 + self.blue_value()))
+        self.top_ball.add_updater(follow(top_spin, lambda: self.top_screen(self.blue_value())))
         self.bot_ball.add_updater(follow(bot_spin, lambda: self.p_x - self.red_dist()))
 
         self.add(self.top_axis, self.top_dots, self.top_star, *bottom, self.p_dot, self.p_label,
@@ -1287,6 +1319,11 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         self.play(FadeIn(name_group, shift=UP * 0.2))
         self.long_pause()
 
+        # the blue axis is stretched to 0..50, so that time can run long enough to see the red
+        # ball slow down
+        self.play(self.top_zoom.animate.set_value(1), run_time=3, rate_func=smooth)
+        self.long_pause(2)
+
         # ---- Central box: y and x (distance to P) with their true values ----
         values = self.live_values()
         widest = self.live_values()
@@ -1319,9 +1356,9 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         new_name.add_updater(lambda m: m.next_to(arrow, DOWN, buff=0.15))
 
         # ---- First back and forth: the red ball slows down as it gets closer to P ----
-        self.roll_to(7)
+        self.roll_to(40, seconds_per_unit=0.3)
         self.long_pause(2)
-        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(2)
 
         # ---- y = Nap.Log(x) appears, second back and forth ----
@@ -1337,9 +1374,9 @@ class NeperContinu(NeperMixin, MovingCameraScene):
         self.play(Write(law), run_time=1.5)
         self.play(Circumscribe(law, color=YELLOW))
         self.long_pause()
-        self.roll_to(7)
+        self.roll_to(40, seconds_per_unit=0.3)
         self.long_pause(2)
-        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(2)
 
         # ---- The product rule: the naive guess, then the corrected rule ----
@@ -1398,7 +1435,7 @@ class NeperSauts(NeperMixin, MovingCameraScene):
 
         def mark(n):
             # small ticks with Y_n and X_n at the balls' current positions
-            top_p = np.array([self.x0 + blue.get_value(), self.top_y, 0])
+            top_p = np.array([self.top_screen(blue.get_value()), self.top_y, 0])
             bot_p = np.array([self.red_ball_x(), self.bot_y, 0])
             group = VGroup(
                 Line(top_p + DOWN * 0.15, top_p + UP * 0.15, color=BLUE, stroke_width=4),
@@ -1592,7 +1629,7 @@ class NeperTable(NeperMixin, MovingCameraScene):
 
 class NeperEtLn(NeperMixin, MovingCameraScene):
     def construct(self):
-        self.neper_setup(transformed=True)
+        self.neper_setup(transformed=True, top_zoomed=True)
         arrow = self.distance_arrow()
         x_name = MathTex("x", color=RED, font_size=40)
         name = VGroup(x_name, SurroundingRectangle(x_name, color=RED, buff=0.12, corner_radius=0.08))
@@ -1626,7 +1663,7 @@ class NeperEtLn(NeperMixin, MovingCameraScene):
         self.play(Circumscribe(formula[5:], color=YELLOW))
         self.long_pause(4)
 
-        self.roll_to(8)
+        self.roll_to(40, seconds_per_unit=0.3)
         self.long_pause(3)
-        self.roll_to(0, seconds_per_unit=0.6, rate_func=smooth)
+        self.roll_to(0, seconds_per_unit=0.12, rate_func=smooth)
         self.long_pause(4)
